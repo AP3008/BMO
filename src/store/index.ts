@@ -1,25 +1,110 @@
 import { create } from "zustand";
 
-type BmoExpression = "idle" | "thinking" | "alert" | "focused" | "happy";
+// ── Domain types ────────────────────────────────────────────────────────────
 
-interface BmoStore {
-  expression: BmoExpression;
-  activePanel: string | null;
-  isSpeaking: boolean;
-  isListening: boolean;
-  setExpression: (expression: BmoExpression) => void;
-  setActivePanel: (panel: string | null) => void;
-  setIsSpeaking: (value: boolean) => void;
-  setIsListening: (value: boolean) => void;
+export type BmoExpression = "idle" | "thinking" | "alert" | "focused" | "happy";
+
+export interface Message {
+  id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  createdAt: Date;
 }
 
+export interface Timer {
+  type: "pomodoro" | "custom";
+  durationSecs: number;
+  remainingSecs: number;
+  isRunning: boolean;
+}
+
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  startsAt: Date;
+  endsAt?: Date;
+}
+
+export interface ConfirmRequest {
+  id: string;
+  label: string;
+  command: string;
+  workingDir?: string;
+}
+
+// ── Store interface ──────────────────────────────────────────────────────────
+
+interface BmoStore {
+  // Chat
+  messages: Message[];
+  isLoading: boolean;
+  addMessage: (msg: Message) => void;
+  setIsLoading: (v: boolean) => void;
+
+  // BMO face
+  expression: BmoExpression;
+  setExpression: (e: BmoExpression) => void;
+
+  // Voice
+  isSpeaking: boolean;
+  isListening: boolean;
+  setIsSpeaking: (v: boolean) => void;
+  setIsListening: (v: boolean) => void;
+
+  // Focus timer
+  activeTimer: Timer | null;
+  setTimer: (t: Timer | null) => void;
+
+  // Sidebar
+  isCollapsed: boolean;
+  toggleCollapsed: () => void;
+  activePanel: "calendar" | "notes" | "settings" | null;
+  setActivePanel: (p: string | null) => void;
+
+  // Calendar
+  upcomingEvents: CalendarEvent[];
+  setUpcomingEvents: (events: CalendarEvent[]) => void;
+
+  // Pending confirmations
+  pendingConfirm: ConfirmRequest | null;
+  setPendingConfirm: (req: ConfirmRequest | null) => void;
+}
+
+// ── Store implementation ─────────────────────────────────────────────────────
+
 export const useBmoStore = create<BmoStore>((set) => ({
+  // Chat
+  messages: [],
+  isLoading: false,
+  addMessage: (msg) => set((s) => ({ messages: [...s.messages, msg] })),
+  setIsLoading: (v) => set({ isLoading: v }),
+
+  // BMO face
   expression: "idle",
-  activePanel: null,
+  setExpression: (e) => set({ expression: e }),
+
+  // Voice
   isSpeaking: false,
   isListening: false,
-  setExpression: (expression) => set({ expression }),
-  setActivePanel: (panel) => set({ activePanel: panel as BmoStore["activePanel"] }),
-  setIsSpeaking: (value) => set({ isSpeaking: value }),
-  setIsListening: (value) => set({ isListening: value }),
+  setIsSpeaking: (v) => set({ isSpeaking: v }),
+  setIsListening: (v) => set({ isListening: v }),
+
+  // Focus timer
+  activeTimer: null,
+  setTimer: (t) => set({ activeTimer: t }),
+
+  // Sidebar
+  isCollapsed: false,
+  toggleCollapsed: () => set((s) => ({ isCollapsed: !s.isCollapsed })),
+  activePanel: null,
+  setActivePanel: (p) =>
+    set({ activePanel: p as BmoStore["activePanel"] }),
+
+  // Calendar
+  upcomingEvents: [],
+  setUpcomingEvents: (events) => set({ upcomingEvents: events }),
+
+  // Pending confirmations
+  pendingConfirm: null,
+  setPendingConfirm: (req) => set({ pendingConfirm: req }),
 }));
