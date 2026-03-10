@@ -3,6 +3,8 @@ import { create } from "zustand";
 // ── Domain types ────────────────────────────────────────────────────────────
 
 export type BmoExpression = "idle" | "thinking" | "alert" | "focused" | "happy";
+export type SidebarMode = "collapsed" | "quick" | "expanded";
+export type QuickPanel = "face" | "chat" | "timer" | "calendar" | "notes" | "settings";
 
 export interface Message {
   id: string;
@@ -56,10 +58,10 @@ interface BmoStore {
   setTimer: (t: Timer | null) => void;
 
   // Sidebar
-  isCollapsed: boolean;
-  toggleCollapsed: () => void;
-  activePanel: "calendar" | "notes" | "settings" | null;
-  setActivePanel: (p: string | null) => void;
+  sidebarMode: SidebarMode;
+  quickPanel: QuickPanel | null;
+  setSidebarMode: (mode: SidebarMode) => void;
+  toggleQuickPanel: (panel: QuickPanel) => void;
 
   // Calendar
   upcomingEvents: CalendarEvent[];
@@ -72,7 +74,7 @@ interface BmoStore {
 
 // ── Store implementation ─────────────────────────────────────────────────────
 
-export const useBmoStore = create<BmoStore>((set) => ({
+export const useBmoStore = create<BmoStore>((set, get) => ({
   // Chat
   messages: [],
   isLoading: false,
@@ -94,11 +96,21 @@ export const useBmoStore = create<BmoStore>((set) => ({
   setTimer: (t) => set({ activeTimer: t }),
 
   // Sidebar
-  isCollapsed: false,
-  toggleCollapsed: () => set((s) => ({ isCollapsed: !s.isCollapsed })),
-  activePanel: null,
-  setActivePanel: (p) =>
-    set({ activePanel: p as BmoStore["activePanel"] }),
+  sidebarMode: "collapsed",
+  quickPanel: null,
+  setSidebarMode: (mode) =>
+    set({
+      sidebarMode: mode,
+      quickPanel: mode === "collapsed" ? null : get().quickPanel,
+    }),
+  toggleQuickPanel: (panel) =>
+    set((s) => {
+      if (s.sidebarMode === "expanded")
+        return { sidebarMode: "quick", quickPanel: panel };
+      if (s.quickPanel === panel)
+        return { sidebarMode: "collapsed", quickPanel: null };
+      return { sidebarMode: "quick", quickPanel: panel };
+    }),
 
   // Calendar
   upcomingEvents: [],
