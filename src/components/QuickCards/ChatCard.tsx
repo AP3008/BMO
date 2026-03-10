@@ -1,6 +1,6 @@
 export function ChatCard() {
   return (
-    <div className="flex flex-col items-center justify-center h-full gap-2">
+    <div className="flex flex-col items-center gap-2">
       <span className="text-2xl">💬</span>
       <span
         className="text-xs opacity-50"

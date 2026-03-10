@@ -1,11 +1,11 @@
 export function FaceCard() {
   return (
-    <div className="flex flex-col items-center justify-center h-full gap-2">
+    <div className="flex flex-col items-center gap-2">
       <div
-        className="flex items-center justify-center rounded-xl text-lg font-bold"
+        className="flex items-center justify-center rounded-xl text-base font-bold"
         style={{
-          width: "90px",
-          height: "60px",
+          width: 80,
+          height: 50,
           backgroundColor: "var(--bmo-face)",
           color: "var(--bmo-teal-dark)",
         }}

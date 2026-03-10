@@ -1,6 +1,6 @@
 export function TimerCard() {
   return (
-    <div className="flex flex-col items-center justify-center h-full gap-2">
+    <div className="flex flex-col items-center gap-2">
       <span
         className="text-2xl font-mono font-bold"
         style={{ color: "var(--bmo-teal-dark)" }}

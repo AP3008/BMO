@@ -3,7 +3,7 @@ import { create } from "zustand";
 // ── Domain types ────────────────────────────────────────────────────────────
 
 export type BmoExpression = "idle" | "thinking" | "alert" | "focused" | "happy";
-export type SidebarMode = "collapsed" | "quick" | "expanded";
+export type SidebarMode = "collapsed" | "expanded";
 export type QuickPanel = "face" | "chat" | "timer" | "calendar" | "notes" | "settings";
 
 export interface Message {
@@ -101,15 +101,13 @@ export const useBmoStore = create<BmoStore>((set, get) => ({
   setSidebarMode: (mode) =>
     set({
       sidebarMode: mode,
-      quickPanel: mode === "collapsed" ? null : get().quickPanel,
+      quickPanel: mode === "expanded" ? null : get().quickPanel,
     }),
   toggleQuickPanel: (panel) =>
     set((s) => {
-      if (s.sidebarMode === "expanded")
-        return { sidebarMode: "quick", quickPanel: panel };
-      if (s.quickPanel === panel)
-        return { sidebarMode: "collapsed", quickPanel: null };
-      return { sidebarMode: "quick", quickPanel: panel };
+      if (s.sidebarMode === "expanded") return {};
+      if (s.quickPanel === panel) return { quickPanel: null };
+      return { quickPanel: panel };
     }),
 
   // Calendar
