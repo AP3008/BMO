@@ -1,63 +1,58 @@
 import { useEffect } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { LogicalSize } from "@tauri-apps/api/dpi";
+import { getCurrentWindow, primaryMonitor } from "@tauri-apps/api/window";
+import { LogicalSize, LogicalPosition } from "@tauri-apps/api/dpi";
 import { useBmoStore } from "../../store";
 import { StatusBar } from "../StatusBar";
 
-const EXPANDED_W = 300;
+const EXPANDED_W = 260;
 const EXPANDED_H = 900;
-const COLLAPSED_W = 60;
-const COLLAPSED_H = 220;
+const COLLAPSED_W = 32;
+const COLLAPSED_H = 80;
+
+async function snapToEdge(collapsed: boolean) {
+  const win = getCurrentWindow();
+  const monitor = await primaryMonitor();
+  if (!monitor) return;
+
+  const scale = monitor.scaleFactor;
+  const screenW = monitor.size.width / scale;
+  const screenH = monitor.size.height / scale;
+
+  if (collapsed) {
+    const w = COLLAPSED_W;
+    const h = COLLAPSED_H;
+    await win.setSize(new LogicalSize(w, h));
+    await win.setPosition(new LogicalPosition(screenW - w, screenH / 2 - h / 2));
+  } else {
+    const w = EXPANDED_W;
+    const h = EXPANDED_H;
+    await win.setSize(new LogicalSize(w, h));
+    await win.setPosition(new LogicalPosition(screenW - w, screenH / 2 - h / 2));
+  }
+}
 
 export function Sidebar() {
   const isCollapsed = useBmoStore((s) => s.isCollapsed);
   const toggleCollapsed = useBmoStore((s) => s.toggleCollapsed);
 
-  // Resize the native window whenever collapsed state changes
   useEffect(() => {
-    const win = getCurrentWindow();
-    if (isCollapsed) {
-      win.setSize(new LogicalSize(COLLAPSED_W, COLLAPSED_H));
-    } else {
-      win.setSize(new LogicalSize(EXPANDED_W, EXPANDED_H));
-    }
+    snapToEdge(isCollapsed);
   }, [isCollapsed]);
 
   if (isCollapsed) {
     return (
       <div
-        className="flex flex-col items-center justify-between h-screen w-full select-none"
-        style={{ backgroundColor: "var(--bmo-teal)", overflow: "hidden" }}
+        className="w-full h-screen flex items-center justify-center select-none"
+        style={{ backgroundColor: "var(--bmo-teal)" }}
       >
-        {/* Drag region */}
-        <div
-          data-tauri-drag-region
-          className="w-full flex items-center justify-center cursor-grab"
-          style={{ height: "40px", backgroundColor: "var(--bmo-teal-dark)" }}
-        />
-
-        {/* BMO icon placeholder */}
-        <div className="flex flex-col items-center gap-1 flex-1 justify-center">
-          <div
-            className="rounded-lg flex items-center justify-center text-lg font-bold"
-            style={{
-              width: "44px",
-              height: "36px",
-              backgroundColor: "var(--bmo-screen)",
-              color: "var(--bmo-teal-dark)",
-            }}
-          >
-            B
-          </div>
-          {/* Expand button */}
-          <button
-            onClick={toggleCollapsed}
-            className="mt-2 text-white opacity-70 hover:opacity-100 transition-opacity text-xs"
-            title="Expand"
-          >
-            ▶
-          </button>
-        </div>
+        <button
+          onClick={toggleCollapsed}
+          className="text-white opacity-70 hover:opacity-100 transition-opacity"
+          style={{ fontSize: "18px" }}
+          title="Open BMO"
+        >
+          ▶
+        </button>
       </div>
     );
   }

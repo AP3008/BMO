@@ -6,6 +6,8 @@
   "permissions": [
     "core:default",
     "opener:default",
-    "core:window:allow-set-size"
+    "core:window:allow-set-size",
+    "core:window:allow-set-position",
+    "core:window:allow-primary-monitor"
   ]
 }

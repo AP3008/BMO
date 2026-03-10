@@ -13,13 +13,11 @@
     "windows": [
       {
         "title": "bmo",
-        "width": 300,
+        "width": 260,
         "height": 900,
         "decorations": false,
         "alwaysOnTop": false,
-        "resizable": true,
-        "minWidth": 280,
-        "maxWidth": 400
+        "resizable": true
       }
     ],
     "security": {
