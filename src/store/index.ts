@@ -2,7 +2,10 @@ import { create } from "zustand";
 
 // ── Domain types ────────────────────────────────────────────────────────────
 
-export type BmoExpression = "idle" | "thinking" | "alert" | "focused" | "happy";
+export type BmoExpression =
+  | "idle" | "happy" | "angry"
+  | "thinking" | "awe" | "cheeky" | "love"
+  | "sad" | "scared" | "shocked" | "suspicious";
 
 export interface Message {
   id: string;

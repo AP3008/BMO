@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { getCurrentWindow, primaryMonitor } from "@tauri-apps/api/window";
 import { LogicalSize, LogicalPosition } from "@tauri-apps/api/dpi";
 import { useBmoStore } from "../../store";
+import { BmoFace } from "../BmoFace";
 import { StatusBar } from "../StatusBar";
 
 const SIDEBAR_W = 260;
@@ -89,18 +90,7 @@ export function Sidebar() {
             className="flex items-center justify-center shrink-0"
             style={{ height: "180px" }}
           >
-            <div
-              className="flex items-center justify-center rounded-2xl text-2xl font-bold"
-              style={{
-                width: "120px",
-                height: "80px",
-                backgroundColor: "var(--bmo-face)",
-                color: "var(--bmo-teal-dark)",
-                letterSpacing: "0.05em",
-              }}
-            >
-              ◕‿◕
-            </div>
+            <BmoFace />
           </div>
 
           {/* Chat slot */}
