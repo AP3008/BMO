@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getCurrentWindow, primaryMonitor } from "@tauri-apps/api/window";
 import { LogicalSize, LogicalPosition } from "@tauri-apps/api/dpi";
 import { motion } from "framer-motion";
@@ -43,7 +43,6 @@ async function animateToEdge(collapsed: boolean) {
   const screenW = monitor.size.width / scale;
   const screenH = monitor.size.height / scale;
 
-  // From = the state we're leaving
   const fromW = collapsed ? EXPANDED_W : COLLAPSED_W;
   const fromH = collapsed ? EXPANDED_H : COLLAPSED_H;
   const toW = collapsed ? COLLAPSED_W : EXPANDED_W;
@@ -59,7 +58,6 @@ async function animateToEdge(collapsed: boolean) {
       const w = Math.round(fromW + (toW - fromW) * e);
       const h = Math.round(fromH + (toH - fromH) * e);
 
-      // Right-edge + vertically-centered derived from current frame size
       win.setSize(new LogicalSize(w, h));
       win.setPosition(
         new LogicalPosition(screenW - w, screenH / 2 - h / 2),
@@ -81,21 +79,36 @@ const fadeIn = {
   transition: { duration: 0.25, ease: "easeOut" as const },
 };
 
+type Visual = "expanded" | "collapsing" | "collapsed";
+
 export function Sidebar() {
   const isCollapsed = useBmoStore((s) => s.isCollapsed);
   const toggleCollapsed = useBmoStore((s) => s.toggleCollapsed);
   const isFirstRender = useRef(true);
+  const [visual, setVisual] = useState<Visual>(
+    isCollapsed ? "collapsed" : "expanded",
+  );
 
   useEffect(() => {
     if (isFirstRender.current) {
       isFirstRender.current = false;
       snapToEdge(isCollapsed);
+      return;
+    }
+
+    if (isCollapsed) {
+      // Immediately swap to a solid fill, then animate, then show tab button
+      setVisual("collapsing");
+      animateToEdge(true).then(() => setVisual("collapsed"));
     } else {
-      animateToEdge(isCollapsed);
+      // Show expanded content immediately, animate window open
+      setVisual("expanded");
+      animateToEdge(false);
     }
   }, [isCollapsed]);
 
-  if (isCollapsed) {
+  /* ── Collapsed: tiny tab button ─────────────────────── */
+  if (visual === "collapsed") {
     return (
       <motion.button
         {...fadeIn}
@@ -115,6 +128,20 @@ export function Sidebar() {
     );
   }
 
+  /* ── Collapsing: solid fill while window shrinks ─────── */
+  if (visual === "collapsing") {
+    return (
+      <div
+        className="w-full h-screen select-none"
+        style={{
+          backgroundColor: "var(--bmo-teal-dark)",
+          borderRadius: "10px 0 0 10px",
+        }}
+      />
+    );
+  }
+
+  /* ── Expanded: full sidebar ─────────────────────────── */
   return (
     <motion.div
       {...fadeIn}
