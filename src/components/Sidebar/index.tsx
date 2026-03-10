@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { motion } from "framer-motion";
 import { getCurrentWindow, primaryMonitor } from "@tauri-apps/api/window";
 import { LogicalSize, LogicalPosition } from "@tauri-apps/api/dpi";
 import { useBmoStore } from "../../store";
@@ -6,13 +7,8 @@ import { StatusBar } from "../StatusBar";
 
 const EXPANDED_W = 260;
 const COLLAPSED_W = 20;
-const COLLAPSED_H = 48;
 const SIDEBAR_H = 900;
-const ANIM_DURATION = 250;
-
-function easeOutCubic(t: number): number {
-  return 1 - Math.pow(1 - t, 3);
-}
+const SLIDE_OFFSET = EXPANDED_W; // slide fully off-screen
 
 async function getScreenMetrics() {
   const monitor = await primaryMonitor();
@@ -24,71 +20,16 @@ async function getScreenMetrics() {
   };
 }
 
-/** First mount — snap to final state instantly. */
-async function snapToEdge(collapsed: boolean) {
+/** Snap native window width. Height stays constant at 900 to avoid vertical jump. */
+async function snapToSize(collapsed: boolean) {
   const win = getCurrentWindow();
   const m = await getScreenMetrics();
   if (!m) return;
 
   const w = collapsed ? COLLAPSED_W : EXPANDED_W;
-  const h = collapsed ? COLLAPSED_H : SIDEBAR_H;
-  await win.setSize(new LogicalSize(w, h));
-  await win.setPosition(
-    new LogicalPosition(m.screenW - w, m.screenH / 2 - h / 2),
-  );
-}
-
-/** Slide animation — width-only, height stays constant during slide. */
-async function animateSlide(collapsed: boolean) {
-  const win = getCurrentWindow();
-  const m = await getScreenMetrics();
-  if (!m) return;
-
-  const { screenW, screenH } = m;
-  const y = screenH / 2 - SIDEBAR_H / 2;
-
-  if (collapsed) {
-    // ── Collapsing: slide width 260→20, then snap height ──
-    const start = performance.now();
-    await new Promise<void>((resolve) => {
-      function step() {
-        const t = Math.min((performance.now() - start) / ANIM_DURATION, 1);
-        const e = easeOutCubic(t);
-        const w = Math.round(EXPANDED_W + (COLLAPSED_W - EXPANDED_W) * e);
-        win.setSize(new LogicalSize(w, SIDEBAR_H));
-        win.setPosition(new LogicalPosition(screenW - w, y));
-        if (t < 1) requestAnimationFrame(step);
-        else resolve();
-      }
-      requestAnimationFrame(step);
-    });
-    // Invisible snap: tall transparent strip → small tab
-    await win.setSize(new LogicalSize(COLLAPSED_W, COLLAPSED_H));
-    await win.setPosition(
-      new LogicalPosition(
-        screenW - COLLAPSED_W,
-        screenH / 2 - COLLAPSED_H / 2,
-      ),
-    );
-  } else {
-    // ── Expanding: snap height tall first, then slide width 20→260 ──
-    await win.setSize(new LogicalSize(COLLAPSED_W, SIDEBAR_H));
-    await win.setPosition(new LogicalPosition(screenW - COLLAPSED_W, y));
-
-    const start = performance.now();
-    await new Promise<void>((resolve) => {
-      function step() {
-        const t = Math.min((performance.now() - start) / ANIM_DURATION, 1);
-        const e = easeOutCubic(t);
-        const w = Math.round(COLLAPSED_W + (EXPANDED_W - COLLAPSED_W) * e);
-        win.setSize(new LogicalSize(w, SIDEBAR_H));
-        win.setPosition(new LogicalPosition(screenW - w, y));
-        if (t < 1) requestAnimationFrame(step);
-        else resolve();
-      }
-      requestAnimationFrame(step);
-    });
-  }
+  const y = m.screenH / 2 - SIDEBAR_H / 2;
+  await win.setSize(new LogicalSize(w, SIDEBAR_H));
+  await win.setPosition(new LogicalPosition(m.screenW - w, y));
 }
 
 export function Sidebar() {
@@ -99,10 +40,15 @@ export function Sidebar() {
   useEffect(() => {
     if (isFirstRender.current) {
       isFirstRender.current = false;
-      snapToEdge(isCollapsed);
-    } else {
-      animateSlide(isCollapsed);
+      snapToSize(isCollapsed);
+      return;
     }
+
+    if (!isCollapsed) {
+      // Expanding: snap window big FIRST, then Framer animates content in
+      snapToSize(false);
+    }
+    // Collapsing: Framer animates content out, then onAnimationComplete snaps small
   }, [isCollapsed]);
 
   return (
@@ -112,29 +58,29 @@ export function Sidebar() {
         position: "relative",
         overflow: "hidden",
         background: "transparent",
-        borderRadius: isCollapsed ? "10px 0 0 10px" : "16px 0 0 16px",
       }}
     >
-      {/*
-        Fixed-width content pinned to right edge.
-        As the window narrows, the left side clips away —
-        the sidebar appears to slide behind the screen edge.
-        The toggle button at far-right is always visible.
-      */}
-      <div
-        className="flex flex-col select-none relative"
+      {/* ── Sidebar content (slides via Framer Motion) ── */}
+      <motion.div
+        className="flex flex-col select-none"
+        initial={false}
+        animate={{ x: isCollapsed ? SLIDE_OFFSET : 0 }}
+        transition={{ duration: 0.3, ease: [0.33, 1, 0.68, 1] }}
+        onAnimationComplete={() => {
+          if (isCollapsed) snapToSize(true);
+        }}
         style={{
           position: "absolute",
           top: 0,
           right: 0,
-          width: `${EXPANDED_W}px`,
+          width: EXPANDED_W,
           height: "100%",
           backgroundColor: "var(--bmo-teal)",
           overflow: "hidden",
           borderRadius: "16px 0 0 16px",
         }}
       >
-        {/* ── Header (drag region) ── */}
+        {/* Header (drag region) */}
         <header
           data-tauri-drag-region
           className="flex items-center px-3 shrink-0 cursor-grab"
@@ -151,7 +97,7 @@ export function Sidebar() {
           </span>
         </header>
 
-        {/* ── Body ── */}
+        {/* Body */}
         <main className="flex flex-col flex-1 overflow-hidden">
           {/* Face slot */}
           <div
@@ -186,34 +132,35 @@ export function Sidebar() {
           </div>
         </main>
 
-        {/* ── StatusBar ── */}
+        {/* StatusBar */}
         <StatusBar />
+      </motion.div>
 
-        {/* ── Toggle tab — single button, always at right edge ── */}
-        <button
-          onClick={toggleCollapsed}
-          className="opacity-90 hover:opacity-100 transition-opacity"
-          style={{
-            position: "absolute",
-            right: 0,
-            top: "50%",
-            transform: "translateY(-50%)",
-            height: "48px",
-            width: `${COLLAPSED_W}px`,
-            backgroundColor: "var(--bmo-teal-dark)",
-            fontSize: "10px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            borderRadius: "10px 0 0 10px",
-            color: "#002800",
-            cursor: "pointer",
-          }}
-          title={isCollapsed ? "Open BMO" : "Collapse"}
-        >
-          {isCollapsed ? "▶" : "◀"}
-        </button>
-      </div>
+      {/* ── Toggle button — OUTSIDE motion.div, always at right edge ── */}
+      <button
+        onClick={toggleCollapsed}
+        className="opacity-90 hover:opacity-100 transition-opacity"
+        style={{
+          position: "absolute",
+          right: 0,
+          top: "50%",
+          transform: "translateY(-50%)",
+          height: "48px",
+          width: `${COLLAPSED_W}px`,
+          backgroundColor: "var(--bmo-teal-dark)",
+          fontSize: "10px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          borderRadius: "10px 0 0 10px",
+          color: "#002800",
+          cursor: "pointer",
+          zIndex: 10,
+        }}
+        title={isCollapsed ? "Open BMO" : "Collapse"}
+      >
+        {isCollapsed ? "▶" : "◀"}
+      </button>
     </div>
   );
 }
