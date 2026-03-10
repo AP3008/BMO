@@ -18,6 +18,8 @@ import shocked1 from "../../assets/BMO-face/BMO-Shocked.svg";
 import suspicious1 from "../../assets/BMO-face/BMO-Suspicious.svg";
 import thinking1 from "../../assets/BMO-face/BMO-Thinking.svg";
 
+export const DEFAULT_IDLE = idle1;
+
 export const FACES = {
   happy: [happy2, happy3],
   idle: [idle1, idle2, idle3, idle4],
