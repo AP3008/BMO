@@ -8,7 +8,8 @@ function randomFrom<T>(arr: readonly T[]): T {
 
 const ANGRY_CLICK_THRESHOLD = 5;
 const HAPPY_DURATION_MS = 2000;
-const ANGRY_COOLDOWN_MS = 5000;
+const ANGRY_COOLDOWN_MS = 3000;
+const IDLE_RETURN_MS = 5000;
 
 export function BmoFace() {
   const isCollapsed = useBmoStore((s) => s.isCollapsed);
@@ -18,6 +19,7 @@ export function BmoFace() {
   const seenIdle = useRef<Set<number>>(new Set());
   const clickCount = useRef(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const idleReturnRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const clearPending = useCallback(() => {
     if (timerRef.current) {
@@ -25,6 +27,22 @@ export function BmoFace() {
       timerRef.current = null;
     }
   }, []);
+
+  const clearIdleReturn = useCallback(() => {
+    if (idleReturnRef.current) {
+      clearTimeout(idleReturnRef.current);
+      idleReturnRef.current = null;
+    }
+  }, []);
+
+  const scheduleIdleReturn = useCallback(() => {
+    clearIdleReturn();
+    idleReturnRef.current = setTimeout(() => {
+      setCurrentFace(DEFAULT_IDLE);
+      clickCount.current = 0;
+      seenIdle.current.clear();
+    }, IDLE_RETURN_MS);
+  }, [clearIdleReturn]);
 
   const pickUnseenIdle = useCallback((): string => {
     if (seenIdle.current.size >= FACES.idle.length) {
@@ -43,22 +61,30 @@ export function BmoFace() {
     if (isCollapsed) return;
 
     clearPending();
+    clearIdleReturn();
     clickCount.current = 0;
     seenIdle.current.clear();
     setDisabled(false);
 
     setCurrentFace(randomFrom(FACES.happy));
     timerRef.current = setTimeout(() => {
-      setCurrentFace(pickUnseenIdle());
+      const face = pickUnseenIdle();
+      setCurrentFace(face);
+      // If it's not already the default idle, schedule return
+      if (face !== DEFAULT_IDLE) scheduleIdleReturn();
     }, HAPPY_DURATION_MS);
 
-    return clearPending;
-  }, [isCollapsed, clearPending, pickUnseenIdle]);
+    return () => {
+      clearPending();
+      clearIdleReturn();
+    };
+  }, [isCollapsed, clearPending, clearIdleReturn, pickUnseenIdle, scheduleIdleReturn]);
 
   const handleClick = useCallback(() => {
     if (disabled) return;
 
     clearPending();
+    clearIdleReturn();
     clickCount.current += 1;
 
     if (clickCount.current >= ANGRY_CLICK_THRESHOLD) {
@@ -73,8 +99,10 @@ export function BmoFace() {
       }, ANGRY_COOLDOWN_MS);
     } else {
       setCurrentFace(pickUnseenIdle());
+      // After clicking to a non-default face, return to idle1 after inactivity
+      scheduleIdleReturn();
     }
-  }, [disabled, clearPending, pickUnseenIdle]);
+  }, [disabled, clearPending, clearIdleReturn, pickUnseenIdle, scheduleIdleReturn]);
 
   return (
     <img
