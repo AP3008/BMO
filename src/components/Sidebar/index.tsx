@@ -43,11 +43,12 @@ export function Sidebar() {
     return (
       <div
         className="w-full h-screen flex items-center justify-center select-none"
-        style={{ backgroundColor: "var(--bmo-teal)" }}
+        style={{ backgroundColor: "var(--bmo-teal-dark)" }}
       >
+        {/* Toggle tab — same vertical position as expanded toggle */}
         <button
           onClick={toggleCollapsed}
-          className="text-white opacity-70 hover:opacity-100 transition-opacity"
+          className="text-white opacity-80 hover:opacity-100 transition-opacity"
           style={{ fontSize: "18px" }}
           title="Open BMO"
         >
@@ -59,16 +60,16 @@ export function Sidebar() {
 
   return (
     <div
-      className="flex flex-col h-screen w-full select-none"
-      style={{ backgroundColor: "var(--bmo-screen)", overflow: "hidden" }}
+      className="flex flex-col h-screen w-full select-none relative"
+      style={{ backgroundColor: "var(--bmo-teal)", overflow: "hidden" }}
     >
       {/* ── Header (drag region) ─────────────────────────── */}
       <header
         data-tauri-drag-region
-        className="flex items-center justify-between px-3 shrink-0 cursor-grab"
+        className="flex items-center px-3 shrink-0 cursor-grab"
         style={{
           height: "44px",
-          backgroundColor: "var(--bmo-teal)",
+          backgroundColor: "var(--bmo-teal-dark)",
         }}
       >
         <span
@@ -77,14 +78,6 @@ export function Sidebar() {
         >
           BMO
         </span>
-        <button
-          onClick={toggleCollapsed}
-          className="text-sm font-bold opacity-70 hover:opacity-100 transition-opacity"
-          style={{ color: "var(--bmo-screen)" }}
-          title="Collapse"
-        >
-          ◀
-        </button>
       </header>
 
       {/* ── Body ─────────────────────────────────────────── */}
@@ -99,8 +92,8 @@ export function Sidebar() {
             style={{
               width: "120px",
               height: "80px",
-              backgroundColor: "var(--bmo-teal)",
-              color: "var(--bmo-screen)",
+              backgroundColor: "var(--bmo-face)",
+              color: "var(--bmo-teal-dark)",
               letterSpacing: "0.05em",
             }}
           >
@@ -111,7 +104,7 @@ export function Sidebar() {
         {/* Chat slot — Feature 05 will replace this */}
         <div
           className="flex-1 flex items-center justify-center overflow-hidden"
-          style={{ borderTop: "1px solid rgba(78,205,196,0.2)" }}
+          style={{ borderTop: "1px solid rgba(4,120,119,0.2)" }}
         >
           <p
             className="text-xs text-center px-4 opacity-40"
@@ -124,6 +117,30 @@ export function Sidebar() {
 
       {/* ── Footer (StatusBar) ───────────────────────────── */}
       <StatusBar />
+
+      {/* ── Collapse tab — vertically centered on right edge ── */}
+      <button
+        onClick={toggleCollapsed}
+        className="opacity-80 hover:opacity-100 transition-opacity text-white"
+        style={{
+          position: "absolute",
+          right: 0,
+          top: "50%",
+          transform: "translateY(-50%)",
+          height: "48px",
+          width: "20px",
+          backgroundColor: "var(--bmo-teal-dark)",
+          fontSize: "10px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          borderRadius: "4px 0 0 4px",
+          cursor: "pointer",
+        }}
+        title="Collapse"
+      >
+        ◀
+      </button>
     </div>
   );
 }
