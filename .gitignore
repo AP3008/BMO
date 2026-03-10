@@ -12,8 +12,12 @@ dist
 dist-ssr
 *.local
 
+# Coding Agents
 CLAUDE.md.local
 PROGRESS.md
+.agents/
+.claude/ 
+skills-lock.json
 
 # Editor directories and files
 .vscode/*
