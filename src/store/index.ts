@@ -3,8 +3,6 @@ import { create } from "zustand";
 // ── Domain types ────────────────────────────────────────────────────────────
 
 export type BmoExpression = "idle" | "thinking" | "alert" | "focused" | "happy";
-export type SidebarMode = "collapsed" | "expanded";
-export type QuickPanel = "face" | "chat" | "timer" | "calendar" | "notes" | "settings";
 
 export interface Message {
   id: string;
@@ -58,10 +56,10 @@ interface BmoStore {
   setTimer: (t: Timer | null) => void;
 
   // Sidebar
-  sidebarMode: SidebarMode;
-  quickPanel: QuickPanel | null;
-  setSidebarMode: (mode: SidebarMode) => void;
-  toggleQuickPanel: (panel: QuickPanel) => void;
+  isCollapsed: boolean;
+  toggleCollapsed: () => void;
+  activePanel: "calendar" | "notes" | "settings" | null;
+  setActivePanel: (p: string | null) => void;
 
   // Calendar
   upcomingEvents: CalendarEvent[];
@@ -74,7 +72,7 @@ interface BmoStore {
 
 // ── Store implementation ─────────────────────────────────────────────────────
 
-export const useBmoStore = create<BmoStore>((set, get) => ({
+export const useBmoStore = create<BmoStore>((set) => ({
   // Chat
   messages: [],
   isLoading: false,
@@ -96,19 +94,11 @@ export const useBmoStore = create<BmoStore>((set, get) => ({
   setTimer: (t) => set({ activeTimer: t }),
 
   // Sidebar
-  sidebarMode: "collapsed",
-  quickPanel: null,
-  setSidebarMode: (mode) =>
-    set({
-      sidebarMode: mode,
-      quickPanel: mode === "expanded" ? null : get().quickPanel,
-    }),
-  toggleQuickPanel: (panel) =>
-    set((s) => {
-      if (s.sidebarMode === "expanded") return {};
-      if (s.quickPanel === panel) return { quickPanel: null };
-      return { quickPanel: panel };
-    }),
+  isCollapsed: false,
+  toggleCollapsed: () => set((s) => ({ isCollapsed: !s.isCollapsed })),
+  activePanel: null,
+  setActivePanel: (p) =>
+    set({ activePanel: p as BmoStore["activePanel"] }),
 
   // Calendar
   upcomingEvents: [],
