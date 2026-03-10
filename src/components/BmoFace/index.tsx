@@ -68,10 +68,7 @@ export function BmoFace() {
 
     setCurrentFace(randomFrom(FACES.happy));
     timerRef.current = setTimeout(() => {
-      const face = pickUnseenIdle();
-      setCurrentFace(face);
-      // If it's not already the default idle, schedule return
-      if (face !== DEFAULT_IDLE) scheduleIdleReturn();
+      setCurrentFace(DEFAULT_IDLE);
     }, HAPPY_DURATION_MS);
 
     return () => {
