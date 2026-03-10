@@ -9,6 +9,8 @@
   --bmo-yellow: #FFD166;
 }
 
+html,
 body {
+  background: transparent;
   font-family: 'Jersey 10', sans-serif;
 }

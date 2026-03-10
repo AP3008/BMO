@@ -16,6 +16,7 @@
         "width": 260,
         "height": 900,
         "decorations": false,
+        "transparent": true,
         "alwaysOnTop": false,
         "resizable": true
       }

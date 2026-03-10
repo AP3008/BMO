@@ -6,8 +6,8 @@ import { StatusBar } from "../StatusBar";
 
 const EXPANDED_W = 260;
 const EXPANDED_H = 900;
-const COLLAPSED_W = 32;
-const COLLAPSED_H = 80;
+const COLLAPSED_W = 20;
+const COLLAPSED_H = 48;
 
 async function snapToEdge(collapsed: boolean) {
   const win = getCurrentWindow();
@@ -41,27 +41,31 @@ export function Sidebar() {
 
   if (isCollapsed) {
     return (
-      <div
-        className="w-full h-screen flex items-center justify-center select-none"
-        style={{ backgroundColor: "var(--bmo-teal-dark)" }}
+      <button
+        onClick={toggleCollapsed}
+        className="w-full h-screen flex items-center justify-center select-none opacity-90 hover:opacity-100 transition-opacity"
+        style={{
+          backgroundColor: "var(--bmo-teal-dark)",
+          borderRadius: "10px 0 0 10px",
+          fontSize: "10px",
+          color: "#002800",
+          cursor: "pointer",
+        }}
+        title="Open BMO"
       >
-        {/* Toggle tab — same vertical position as expanded toggle */}
-        <button
-          onClick={toggleCollapsed}
-          className="text-white opacity-80 hover:opacity-100 transition-opacity"
-          style={{ fontSize: "18px" }}
-          title="Open BMO"
-        >
-          ▶
-        </button>
-      </div>
+        ▶
+      </button>
     );
   }
 
   return (
     <div
       className="flex flex-col h-screen w-full select-none relative"
-      style={{ backgroundColor: "var(--bmo-teal)", overflow: "hidden" }}
+      style={{
+        backgroundColor: "var(--bmo-teal)",
+        overflow: "hidden",
+        borderRadius: "16px 0 0 16px",
+      }}
     >
       {/* ── Header (drag region) ─────────────────────────── */}
       <header
@@ -118,10 +122,10 @@ export function Sidebar() {
       {/* ── Footer (StatusBar) ───────────────────────────── */}
       <StatusBar />
 
-      {/* ── Collapse tab — vertically centered on right edge ── */}
+      {/* ── Collapse tab — identical shape/size to collapsed window ── */}
       <button
         onClick={toggleCollapsed}
-        className="opacity-80 hover:opacity-100 transition-opacity text-white"
+        className="opacity-90 hover:opacity-100 transition-opacity"
         style={{
           position: "absolute",
           right: 0,
@@ -134,7 +138,8 @@ export function Sidebar() {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          borderRadius: "4px 0 0 4px",
+          borderRadius: "10px 0 0 10px",
+          color: "#002800",
           cursor: "pointer",
         }}
         title="Collapse"
