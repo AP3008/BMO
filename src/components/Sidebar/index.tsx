@@ -66,31 +66,29 @@ export function Sidebar() {
           borderRadius: "16px 0 0 16px",
         }}
       >
-        {/* Header (drag region) */}
-        <header
+        {/* Drag region (invisible, replaces old BMO header) */}
+        <div
           data-tauri-drag-region
-          className="flex items-center px-3 shrink-0 cursor-grab"
-          style={{
-            height: "44px",
-            backgroundColor: "var(--bmo-teal-dark)",
-          }}
-        >
-          <span
-            className="font-bold text-sm tracking-widest"
-            style={{ color: "var(--bmo-screen)" }}
-          >
-            BMO
-          </span>
-        </header>
+          className="shrink-0 cursor-grab"
+          style={{ height: "12px" }}
+        />
 
         {/* Body */}
         <main className="flex flex-col flex-1 overflow-hidden">
-          {/* Face slot */}
+          {/* Face slot — padded to look like a screen inset */}
           <div
-            className="flex items-center justify-center shrink-0"
-            style={{ height: "180px" }}
+            className="shrink-0 flex items-center justify-center"
+            style={{ padding: "12px 20px 8px" }}
           >
-            <BmoFace />
+            <div
+              className="w-full overflow-hidden rounded-2xl"
+              style={{
+                border: "3px solid var(--bmo-teal-dark)",
+                boxShadow: "inset 0 2px 8px rgba(0,0,0,0.15)",
+              }}
+            >
+              <BmoFace />
+            </div>
           </div>
 
           {/* Chat slot */}
