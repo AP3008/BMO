@@ -5,51 +5,39 @@ import { LogicalSize, LogicalPosition } from "@tauri-apps/api/dpi";
 import { useBmoStore } from "../../store";
 import { StatusBar } from "../StatusBar";
 
-const EXPANDED_W = 260;
-const COLLAPSED_W = 20;
+const SIDEBAR_W = 260;
 const SIDEBAR_H = 900;
-const SLIDE_OFFSET = EXPANDED_W; // slide fully off-screen
+const TOGGLE_W = 20;
+const SLIDE_OFFSET = SIDEBAR_W; // slide fully off-screen right
 
-async function getScreenMetrics() {
-  const monitor = await primaryMonitor();
-  if (!monitor) return null;
-  const scale = monitor.scaleFactor;
-  return {
-    screenW: monitor.size.width / scale,
-    screenH: monitor.size.height / scale,
-  };
-}
-
-/** Snap native window width. Height stays constant at 900 to avoid vertical jump. */
-async function snapToSize(collapsed: boolean) {
+/** Position window at right screen edge once on mount. Never resized after. */
+async function initWindow() {
   const win = getCurrentWindow();
-  const m = await getScreenMetrics();
-  if (!m) return;
+  const monitor = await primaryMonitor();
+  if (!monitor) return;
 
-  const w = collapsed ? COLLAPSED_W : EXPANDED_W;
-  const y = m.screenH / 2 - SIDEBAR_H / 2;
-  await win.setSize(new LogicalSize(w, SIDEBAR_H));
-  await win.setPosition(new LogicalPosition(m.screenW - w, y));
+  const scale = monitor.scaleFactor;
+  const screenW = monitor.size.width / scale;
+  const screenH = monitor.size.height / scale;
+
+  await win.setSize(new LogicalSize(SIDEBAR_W, SIDEBAR_H));
+  await win.setPosition(
+    new LogicalPosition(screenW - SIDEBAR_W, screenH / 2 - SIDEBAR_H / 2),
+  );
 }
 
 export function Sidebar() {
   const isCollapsed = useBmoStore((s) => s.isCollapsed);
   const toggleCollapsed = useBmoStore((s) => s.toggleCollapsed);
-  const isFirstRender = useRef(true);
+  const didInit = useRef(false);
 
+  // Set window size/position once on mount — never changes after
   useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-      snapToSize(isCollapsed);
-      return;
+    if (!didInit.current) {
+      didInit.current = true;
+      initWindow();
     }
-
-    if (!isCollapsed) {
-      // Expanding: snap window big FIRST, then Framer animates content in
-      snapToSize(false);
-    }
-    // Collapsing: Framer animates content out, then onAnimationComplete snaps small
-  }, [isCollapsed]);
+  }, []);
 
   return (
     <div
@@ -66,14 +54,11 @@ export function Sidebar() {
         initial={false}
         animate={{ x: isCollapsed ? SLIDE_OFFSET : 0 }}
         transition={{ duration: 0.3, ease: [0.33, 1, 0.68, 1] }}
-        onAnimationComplete={() => {
-          if (isCollapsed) snapToSize(true);
-        }}
         style={{
           position: "absolute",
           top: 0,
           right: 0,
-          width: EXPANDED_W,
+          width: SIDEBAR_W,
           height: "100%",
           backgroundColor: "var(--bmo-teal)",
           overflow: "hidden",
@@ -136,7 +121,7 @@ export function Sidebar() {
         <StatusBar />
       </motion.div>
 
-      {/* ── Toggle button — OUTSIDE motion.div, always at right edge ── */}
+      {/* ── Toggle button — fixed position, never moves ── */}
       <button
         onClick={toggleCollapsed}
         className="opacity-90 hover:opacity-100 transition-opacity"
@@ -146,7 +131,7 @@ export function Sidebar() {
           top: "50%",
           transform: "translateY(-50%)",
           height: "48px",
-          width: `${COLLAPSED_W}px`,
+          width: `${TOGGLE_W}px`,
           backgroundColor: "var(--bmo-teal-dark)",
           fontSize: "10px",
           display: "flex",
