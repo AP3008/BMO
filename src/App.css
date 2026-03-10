@@ -1,1 +1,11 @@
 @import "tailwindcss";
+
+@layer base {
+  html,
+  body,
+  #root {
+    background-color: transparent;
+    margin: 0;
+    padding: 0;
+  }
+}

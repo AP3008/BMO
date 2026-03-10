@@ -13,6 +13,14 @@ pub fn config_exists() -> bool {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .setup(|app| {
+            use tauri::Manager;
+            use tauri::window::Color;
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_background_color(Some(Color(0, 0, 0, 0)));
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
