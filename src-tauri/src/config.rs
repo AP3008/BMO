@@ -87,6 +87,82 @@ impl BmoConfig {
             .map_err(|e| format!("Invalid config: {}", e))
     }
 
+    /// Validate an API key by making a lightweight HTTP request.
+    pub fn validate_api_key(provider: &LlmProvider, key: &str) -> Result<(), String> {
+        let client = reqwest::blocking::Client::new();
+        match provider {
+            LlmProvider::OpenAI => {
+                let resp = client
+                    .get("https://api.openai.com/v1/models")
+                    .header("Authorization", format!("Bearer {}", key))
+                    .send()
+                    .map_err(|e| format!("Network error: {}", e))?;
+                if resp.status().is_success() {
+                    Ok(())
+                } else {
+                    Err(format!("HTTP {}", resp.status()))
+                }
+            }
+            LlmProvider::Anthropic => {
+                let resp = client
+                    .get("https://api.anthropic.com/v1/models")
+                    .header("x-api-key", key)
+                    .header("anthropic-version", "2023-06-01")
+                    .send()
+                    .map_err(|e| format!("Network error: {}", e))?;
+                if resp.status().is_success() {
+                    Ok(())
+                } else {
+                    Err(format!("HTTP {}", resp.status()))
+                }
+            }
+            LlmProvider::Ollama => {
+                let resp = client
+                    .get("http://localhost:11434/api/tags")
+                    .send()
+                    .map_err(|e| format!("Ollama not reachable: {}", e))?;
+                if resp.status().is_success() {
+                    Ok(())
+                } else {
+                    Err(format!("Ollama returned HTTP {}", resp.status()))
+                }
+            }
+            LlmProvider::None => Ok(()),
+        }
+    }
+
+    /// Returns `~/.bmo/.credentials`.
+    pub fn credentials_path() -> PathBuf {
+        let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+        PathBuf::from(home).join(".bmo").join(".credentials")
+    }
+
+    /// Save API key to `~/.bmo/.credentials` with owner-only permissions.
+    pub fn save_api_key(key: &str) -> Result<(), String> {
+        let path = Self::credentials_path();
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("Could not create dir: {}", e))?;
+        }
+        fs::write(&path, key)
+            .map_err(|e| format!("Could not write credentials: {}", e))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o600))
+                .map_err(|e| format!("Could not set permissions: {}", e))?;
+        }
+        Ok(())
+    }
+
+    /// Load API key from `~/.bmo/.credentials`.
+    pub fn load_api_key() -> Result<String, String> {
+        let path = Self::credentials_path();
+        fs::read_to_string(&path)
+            .map(|s| s.trim().to_string())
+            .map_err(|e| format!("No API key found: {}", e))
+    }
+
     /// Write config to `~/.bmo/config.toml`.
     pub fn save(&self) -> Result<(), String> {
         let path = Self::config_path();

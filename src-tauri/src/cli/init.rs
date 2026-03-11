@@ -1,27 +1,111 @@
 use crate::config::{BmoConfig, LlmProvider, NotesConfig, NotesMode, ScreenSide};
+use console::style;
 use dialoguer::{Confirm, Input, Password, Select};
+use indicatif::{ProgressBar, ProgressStyle};
 use std::fs;
 use std::path::PathBuf;
+use std::time::Duration;
 
-pub fn run() {
+/// Map a ScreenSide to its Select index.
+fn screen_side_index(side: &ScreenSide) -> usize {
+    match side {
+        ScreenSide::Right => 0,
+        ScreenSide::Left => 1,
+    }
+}
+
+/// Map an LlmProvider to its Select index.
+fn llm_provider_index(provider: &LlmProvider) -> usize {
+    match provider {
+        LlmProvider::OpenAI => 0,
+        LlmProvider::Anthropic => 1,
+        LlmProvider::Ollama => 2,
+        LlmProvider::None => 3,
+    }
+}
+
+/// Map a NotesMode to its Select index.
+fn notes_mode_index(mode: &NotesMode) -> usize {
+    match mode {
+        NotesMode::Local => 0,
+        NotesMode::Obsidian => 1,
+    }
+}
+
+/// Run the init/settings wizard. Pass `Some(&config)` to pre-fill with existing values.
+pub fn run(prefill: Option<&BmoConfig>) {
+    let is_settings = prefill.is_some();
+
     println!();
-    println!("  ╔══════════════════════════════════╗");
-    println!("  ║   Welcome to BMO!  Let's set up. ║");
-    println!("  ╚══════════════════════════════════╝");
+    if is_settings {
+        println!(
+            "  {}",
+            style("╔══════════════════════════════════════╗")
+                .cyan()
+                .bold()
+        );
+        println!(
+            "  {}",
+            style("║   BMO Settings — update your config  ║")
+                .cyan()
+                .bold()
+        );
+        println!(
+            "  {}",
+            style("╚══════════════════════════════════════╝")
+                .cyan()
+                .bold()
+        );
+    } else {
+        println!(
+            "  {}",
+            style("╔══════════════════════════════════╗")
+                .cyan()
+                .bold()
+        );
+        println!(
+            "  {}",
+            style("║   Welcome to BMO!  Let's set up. ║")
+                .cyan()
+                .bold()
+        );
+        println!(
+            "  {}",
+            style("╚══════════════════════════════════╝")
+                .cyan()
+                .bold()
+        );
+    }
+    println!();
+    println!(
+        "  {}",
+        style("Press Enter to keep the current value shown in brackets.")
+            .dim()
+    );
     println!();
 
-    // 1 — Display name
-    let display_name: String = Input::new()
-        .with_prompt("What should BMO call you?")
-        .interact_text()
-        .unwrap_or_else(|_| std::process::exit(1));
+    // ── 1. Display name ──────────────────────────────────────────────────────
+    let display_name = if let Some(cfg) = prefill {
+        Input::<String>::new()
+            .with_prompt(style("What should BMO call you?").green().to_string())
+            .default(cfg.display_name.clone())
+            .interact_text()
+            .unwrap_or_else(|_| std::process::exit(1))
+    } else {
+        Input::<String>::new()
+            .with_prompt(style("What should BMO call you?").green().to_string())
+            .interact_text()
+            .unwrap_or_else(|_| std::process::exit(1))
+    };
 
-    // 2 — Screen side
+    // ── 2. Screen side ───────────────────────────────────────────────────────
+    println!();
     let side_items = &["Right (default)", "Left"];
+    let side_default = prefill.map_or(0, |c| screen_side_index(&c.screen_side));
     let side_idx = Select::new()
-        .with_prompt("Which screen edge should BMO live on?")
+        .with_prompt(style("Which screen edge should BMO live on?").green().to_string())
         .items(side_items)
-        .default(0)
+        .default(side_default)
         .interact()
         .unwrap_or(0);
     let screen_side = if side_idx == 1 {
@@ -30,12 +114,19 @@ pub fn run() {
         ScreenSide::Right
     };
 
-    // 3 — LLM provider
-    let llm_items = &["OpenAI", "Anthropic", "Ollama", "Skip (no LLM)"];
+    // ── 3. LLM provider ─────────────────────────────────────────────────────
+    println!();
+    println!(
+        "  {}",
+        style("── LLM Configuration ──").cyan().bold()
+    );
+    println!();
+    let llm_items = &["OpenAI", "Anthropic", "Ollama (local)", "Skip (no LLM)"];
+    let llm_default = prefill.map_or(3, |c| llm_provider_index(&c.llm_provider));
     let llm_idx = Select::new()
-        .with_prompt("Choose an LLM provider")
+        .with_prompt(style("Choose an LLM provider").green().to_string())
         .items(llm_items)
-        .default(3)
+        .default(llm_default)
         .interact()
         .unwrap_or(3);
     let llm_provider = match llm_idx {
@@ -45,59 +136,200 @@ pub fn run() {
         _ => LlmProvider::None,
     };
 
-    // 4 — API key (if provider chosen)
-    if !matches!(llm_provider, LlmProvider::None | LlmProvider::Ollama) {
-        let label = match llm_provider {
-            LlmProvider::OpenAI => "OpenAI",
-            LlmProvider::Anthropic => "Anthropic",
-            _ => "API",
+    // ── 4. API key (OpenAI / Anthropic) ──────────────────────────────────────
+    if matches!(llm_provider, LlmProvider::OpenAI | LlmProvider::Anthropic) {
+        let (label, url) = match llm_provider {
+            LlmProvider::OpenAI => ("OpenAI", "https://platform.openai.com/api-keys"),
+            LlmProvider::Anthropic => {
+                ("Anthropic", "https://console.anthropic.com/settings/keys")
+            }
+            _ => unreachable!(),
         };
 
+        println!();
+        println!(
+            "  {} {}",
+            style("Get your API key at:").dim(),
+            style(url).cyan().underlined()
+        );
+
+        let open_browser = Confirm::new()
+            .with_prompt(
+                style(format!("Open the {} API key page in your browser?", label))
+                    .green()
+                    .to_string(),
+            )
+            .default(true)
+            .interact()
+            .unwrap_or(false);
+
+        if open_browser {
+            if let Err(e) = open::that(url) {
+                eprintln!(
+                    "  {}",
+                    style(format!("Could not open browser: {}", e)).yellow()
+                );
+            }
+        }
+
+        println!();
         let key: String = Password::new()
-            .with_prompt(format!("Paste your {} API key", label))
+            .with_prompt(
+                style(format!("Paste your {} API key", label))
+                    .green()
+                    .to_string(),
+            )
             .interact()
             .unwrap_or_default();
 
         if !key.is_empty() {
-            match keyring::Entry::new("bmo", "api_key") {
-                Ok(entry) => {
-                    if let Err(e) = entry.set_password(&key) {
-                        eprintln!("  Warning: could not save key to keychain: {}", e);
-                        eprintln!("  You can set it later via your OS keychain.");
-                    } else {
-                        println!("  API key saved to OS keychain.");
-                    }
+            // Validate
+            let spinner = ProgressBar::new_spinner();
+            spinner.set_style(
+                ProgressStyle::with_template("{spinner:.cyan} {msg}")
+                    .unwrap()
+                    .tick_strings(&[
+                        "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏", " ",
+                    ]),
+            );
+            spinner.set_message("Validating API key...");
+            spinner.enable_steady_tick(Duration::from_millis(80));
+
+            match BmoConfig::validate_api_key(&llm_provider, &key) {
+                Ok(()) => {
+                    spinner.finish_and_clear();
+                    println!(
+                        "  {} {}",
+                        style("✔").green().bold(),
+                        style("API key validated!").green().bold()
+                    );
                 }
                 Err(e) => {
-                    eprintln!("  Warning: keychain not available: {}", e);
+                    spinner.finish_and_clear();
+                    println!(
+                        "  {} {}",
+                        style("⚠").yellow(),
+                        style(format!(
+                            "Could not validate key ({}). Saved anyway — you can update it later.",
+                            e
+                        ))
+                        .yellow()
+                    );
+                }
+            }
+
+            // Store to ~/.bmo/.credentials
+            match BmoConfig::save_api_key(&key) {
+                Ok(()) => {
+                    println!(
+                        "  {} {}",
+                        style("✔").green().bold(),
+                        style("API key saved to ~/.bmo/.credentials").green()
+                    );
+                }
+                Err(e) => {
+                    eprintln!(
+                        "  {} {}",
+                        style("⚠").yellow(),
+                        style(format!("Could not save key: {}", e)).yellow()
+                    );
                 }
             }
         }
     }
 
-    // 5 — Notes storage
+    // ── 4b. Ollama connectivity check ────────────────────────────────────────
+    if matches!(llm_provider, LlmProvider::Ollama) {
+        println!();
+        println!(
+            "  {}",
+            style("Ollama runs locally — no API key needed.").dim()
+        );
+        println!(
+            "  {} {}",
+            style("Make sure Ollama is running:").dim(),
+            style("ollama serve").cyan()
+        );
+
+        let spinner = ProgressBar::new_spinner();
+        spinner.set_style(
+            ProgressStyle::with_template("{spinner:.cyan} {msg}")
+                .unwrap()
+                .tick_strings(&[
+                    "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏", " ",
+                ]),
+        );
+        spinner.set_message("Checking Ollama connection...");
+        spinner.enable_steady_tick(Duration::from_millis(80));
+
+        match BmoConfig::validate_api_key(&LlmProvider::Ollama, "") {
+            Ok(()) => {
+                spinner.finish_and_clear();
+                println!(
+                    "  {} {}",
+                    style("✔").green().bold(),
+                    style("Ollama is running!").green().bold()
+                );
+            }
+            Err(e) => {
+                spinner.finish_and_clear();
+                println!(
+                    "  {} {}",
+                    style("⚠").yellow(),
+                    style(format!(
+                        "Ollama not reachable ({}). Make sure to run `ollama serve` before using BMO.",
+                        e
+                    ))
+                    .yellow()
+                );
+            }
+        }
+    }
+
+    // ── 5. Notes storage ─────────────────────────────────────────────────────
+    println!();
+    println!(
+        "  {}",
+        style("── Notes Configuration ──").cyan().bold()
+    );
+    println!();
     let notes_items = &["Local (~/.bmo/notes/)", "Obsidian vault"];
+    let notes_default = prefill.map_or(0, |c| notes_mode_index(&c.notes.mode));
     let notes_idx = Select::new()
-        .with_prompt("Where should BMO store notes?")
+        .with_prompt(style("Where should BMO store notes?").green().to_string())
         .items(notes_items)
-        .default(0)
+        .default(notes_default)
         .interact()
         .unwrap_or(0);
 
     let mut obsidian_vault_path: Option<String> = None;
     let notes_mode = if notes_idx == 1 {
-        let vault: String = Input::new()
-            .with_prompt("Path to your Obsidian vault")
-            .validate_with(|input: &String| -> Result<(), &str> {
-                if PathBuf::from(input).is_dir() {
-                    Ok(())
-                } else {
-                    Err("Directory does not exist")
-                }
-            })
-            .interact_text()
-            .unwrap_or_default();
-
+        let vault = if let Some(ref path) = prefill.and_then(|c| c.notes.obsidian_vault_path.clone()) {
+            Input::<String>::new()
+                .with_prompt(style("Path to your Obsidian vault").green().to_string())
+                .default(path.clone())
+                .validate_with(|input: &String| -> Result<(), &str> {
+                    if PathBuf::from(input).is_dir() {
+                        Ok(())
+                    } else {
+                        Err("Directory does not exist")
+                    }
+                })
+                .interact_text()
+                .unwrap_or_default()
+        } else {
+            Input::<String>::new()
+                .with_prompt(style("Path to your Obsidian vault").green().to_string())
+                .validate_with(|input: &String| -> Result<(), &str> {
+                    if PathBuf::from(input).is_dir() {
+                        Ok(())
+                    } else {
+                        Err("Directory does not exist")
+                    }
+                })
+                .interact_text()
+                .unwrap_or_default()
+        };
         if !vault.is_empty() {
             obsidian_vault_path = Some(vault);
         }
@@ -106,17 +338,25 @@ pub fn run() {
         NotesMode::Local
     };
 
-    // 6 — Always on top
+    // ── 6. Always on top ─────────────────────────────────────────────────────
+    println!();
+    println!(
+        "  {}",
+        style("── Preferences ──").cyan().bold()
+    );
+    println!();
+    let aot_default = prefill.map_or(false, |c| c.always_on_top);
     let always_on_top = Confirm::new()
-        .with_prompt("Keep BMO always on top?")
-        .default(false)
+        .with_prompt(style("Keep BMO always on top?").green().to_string())
+        .default(aot_default)
         .interact()
         .unwrap_or(false);
 
-    // 7 — Launch at login
+    // ── 7. Launch at login ───────────────────────────────────────────────────
+    let lal_default = prefill.map_or(false, |c| c.launch_at_login);
     let launch_at_login = Confirm::new()
-        .with_prompt("Launch BMO at login?")
-        .default(false)
+        .with_prompt(style("Launch BMO at login?").green().to_string())
+        .default(lal_default)
         .interact()
         .unwrap_or(false);
 
@@ -134,6 +374,17 @@ pub fn run() {
     };
 
     // ── Create directories ───────────────────────────────────────────────────
+    let spinner = ProgressBar::new_spinner();
+    spinner.set_style(
+        ProgressStyle::with_template("{spinner:.cyan} {msg}")
+            .unwrap()
+            .tick_strings(&[
+                "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏", " ",
+            ]),
+    );
+    spinner.set_message("Writing config...");
+    spinner.enable_steady_tick(Duration::from_millis(80));
+
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
     let bmo_dir = PathBuf::from(&home).join(".bmo");
 
@@ -143,21 +394,53 @@ pub fn run() {
         fs::create_dir_all(bmo_dir.join("notes")).expect("Could not create ~/.bmo/notes/");
     }
 
-    // ── Write config ─────────────────────────────────────────────────────────
     config.save().expect("Could not write config");
+    spinner.finish_and_clear();
 
     // ── Summary ──────────────────────────────────────────────────────────────
     println!();
-    println!("  Done! Config saved to ~/.bmo/config.toml");
+    println!(
+        "  {} {}",
+        style("✔").green().bold(),
+        style("Config saved to ~/.bmo/config.toml").green().bold()
+    );
     println!();
-    println!("  Name:           {}", config.display_name);
-    println!("  Screen side:    {:?}", config.screen_side);
-    println!("  LLM provider:   {:?}", config.llm_provider);
-    println!("  Always on top:  {}", config.always_on_top);
-    println!("  Launch at login: {}", config.launch_at_login);
-    println!("  Notes mode:     {:?}", config.notes.mode);
+    println!(
+        "  {}  {}",
+        style("Name:").white().bold(),
+        style(&config.display_name).cyan()
+    );
+    println!(
+        "  {}  {:?}",
+        style("Screen side:").white().bold(),
+        style(&config.screen_side).cyan()
+    );
+    println!(
+        "  {}  {:?}",
+        style("LLM provider:").white().bold(),
+        style(&config.llm_provider).cyan()
+    );
+    println!(
+        "  {}  {}",
+        style("Always on top:").white().bold(),
+        style(config.always_on_top).cyan()
+    );
+    println!(
+        "  {}  {}",
+        style("Launch at login:").white().bold(),
+        style(config.launch_at_login).cyan()
+    );
+    println!(
+        "  {}  {:?}",
+        style("Notes mode:").white().bold(),
+        style(&config.notes.mode).cyan()
+    );
     if let Some(ref vault) = config.notes.obsidian_vault_path {
-        println!("  Obsidian vault: {}", vault);
+        println!(
+            "  {}  {}",
+            style("Obsidian vault:").white().bold(),
+            style(vault).cyan()
+        );
     }
     println!();
 }
