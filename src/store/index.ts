@@ -35,6 +35,26 @@ export interface ConfirmRequest {
   workingDir?: string;
 }
 
+// ── Settings types ───────────────────────────────────────────────────────────
+
+export type ScreenSide = "left" | "right";
+export type LlmProvider = "openai" | "anthropic" | "ollama" | "none";
+export type NotesMode = "obsidian" | "local";
+
+export interface NotesConfig {
+  mode: NotesMode;
+  obsidian_vault_path: string | null;
+}
+
+export interface BmoSettings {
+  display_name: string;
+  screen_side: ScreenSide;
+  llm_provider: LlmProvider;
+  always_on_top: boolean;
+  launch_at_login: boolean;
+  notes: NotesConfig;
+}
+
 // ── Store interface ──────────────────────────────────────────────────────────
 
 interface BmoStore {
@@ -71,6 +91,11 @@ interface BmoStore {
   // Pending confirmations
   pendingConfirm: ConfirmRequest | null;
   setPendingConfirm: (req: ConfirmRequest | null) => void;
+
+  // Settings (loaded from ~/.bmo/config.toml)
+  settings: BmoSettings | null;
+  settingsLoaded: boolean;
+  setSettings: (s: BmoSettings) => void;
 }
 
 // ── Store implementation ─────────────────────────────────────────────────────
@@ -110,4 +135,9 @@ export const useBmoStore = create<BmoStore>((set) => ({
   // Pending confirmations
   pendingConfirm: null,
   setPendingConfirm: (req) => set({ pendingConfirm: req }),
+
+  // Settings
+  settings: null,
+  settingsLoaded: false,
+  setSettings: (s) => set({ settings: s, settingsLoaded: true }),
 }));

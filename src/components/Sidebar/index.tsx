@@ -9,10 +9,10 @@ import { StatusBar } from "../StatusBar";
 const SIDEBAR_W = 260;
 const SIDEBAR_H = 900;
 const TOGGLE_W = 20;
-const SLIDE_OFFSET = SIDEBAR_W; // slide fully off-screen right
+const SLIDE_OFFSET = SIDEBAR_W;
 
-/** Position window at right screen edge once on mount. Never resized after. */
-async function initWindow() {
+/** Position window at the configured screen edge. */
+async function initWindow(side: "left" | "right") {
   const win = getCurrentWindow();
   const monitor = await primaryMonitor();
   if (!monitor) return;
@@ -21,24 +21,30 @@ async function initWindow() {
   const screenW = monitor.size.width / scale;
   const screenH = monitor.size.height / scale;
 
+  const x = side === "left" ? 0 : screenW - SIDEBAR_W;
+
   await win.setSize(new LogicalSize(SIDEBAR_W, SIDEBAR_H));
   await win.setPosition(
-    new LogicalPosition(screenW - SIDEBAR_W, screenH / 2 - SIDEBAR_H / 2),
+    new LogicalPosition(x, screenH / 2 - SIDEBAR_H / 2),
   );
 }
 
 export function Sidebar() {
   const isCollapsed = useBmoStore((s) => s.isCollapsed);
   const toggleCollapsed = useBmoStore((s) => s.toggleCollapsed);
+  const settingsLoaded = useBmoStore((s) => s.settingsLoaded);
+  const screenSide = useBmoStore((s) => s.settings?.screen_side ?? "right");
   const didInit = useRef(false);
 
-  // Set window size/position once on mount — never changes after
+  const isLeft = screenSide === "left";
+
+  // Position window once settings are loaded
   useEffect(() => {
-    if (!didInit.current) {
+    if (settingsLoaded && !didInit.current) {
       didInit.current = true;
-      initWindow();
+      initWindow(screenSide);
     }
-  }, []);
+  }, [settingsLoaded, screenSide]);
 
   return (
     <div
@@ -53,20 +59,20 @@ export function Sidebar() {
       <motion.div
         className="flex flex-col select-none"
         initial={false}
-        animate={{ x: isCollapsed ? SLIDE_OFFSET : 0 }}
+        animate={{ x: isCollapsed ? (isLeft ? -SLIDE_OFFSET : SLIDE_OFFSET) : 0 }}
         transition={{ duration: 0.3, ease: [0.33, 1, 0.68, 1] }}
         style={{
           position: "absolute",
           top: 0,
-          right: 0,
+          ...(isLeft ? { left: 0 } : { right: 0 }),
           width: SIDEBAR_W,
           height: "100%",
           backgroundColor: "var(--bmo-teal)",
           overflow: "hidden",
-          borderRadius: "16px 0 0 16px",
+          borderRadius: isLeft ? "0 16px 16px 0" : "16px 0 0 16px",
         }}
       >
-        {/* Drag region (invisible, replaces old BMO header) */}
+        {/* Drag region */}
         <div
           data-tauri-drag-region
           className="shrink-0 cursor-grab"
@@ -75,7 +81,7 @@ export function Sidebar() {
 
         {/* Body */}
         <main className="flex flex-col flex-1 overflow-hidden">
-          {/* Face slot — padded to look like a screen inset */}
+          {/* Face slot */}
           <div
             className="shrink-0 flex items-center justify-center"
             style={{ padding: "12px 20px 8px" }}
@@ -115,7 +121,7 @@ export function Sidebar() {
         className="opacity-90 hover:opacity-100 transition-opacity"
         style={{
           position: "absolute",
-          right: 0,
+          ...(isLeft ? { left: 0 } : { right: 0 }),
           top: "50%",
           transform: "translateY(-50%)",
           height: "48px",
@@ -125,14 +131,17 @@ export function Sidebar() {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          borderRadius: "10px 0 0 10px",
+          borderRadius: isLeft ? "0 10px 10px 0" : "10px 0 0 10px",
           color: "#002800",
           cursor: "pointer",
           zIndex: 10,
         }}
         title={isCollapsed ? "Open BMO" : "Collapse"}
       >
-        {isCollapsed ? "▶" : "◀"}
+        {isCollapsed
+          ? (isLeft ? "▶" : "◀")
+          : (isLeft ? "◀" : "▶")
+        }
       </button>
     </div>
   );

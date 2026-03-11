@@ -1,5 +1,6 @@
 pub mod cli;
 pub mod commands;
+pub mod config;
 pub mod memory;
 pub mod scheduler;
 pub mod google;
@@ -21,7 +22,7 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![])
+        .invoke_handler(tauri::generate_handler![commands::config::get_config])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
