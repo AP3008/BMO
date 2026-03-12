@@ -102,6 +102,7 @@ async fn stream_anthropic(
     let mut stream = resp.bytes_stream();
     let mut full_response = String::new();
     let mut buffer = String::new();
+    let mut emitted_end = false;
 
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| format!("Stream error: {}", e))?;
@@ -123,6 +124,7 @@ async fn stream_anthropic(
                         }
                         Some("message_stop") => {
                             let _ = app.emit("chat-stream-end", &full_response);
+                            emitted_end = true;
                         }
                         Some("error") => {
                             let err_msg = parsed["error"]["message"]
@@ -138,7 +140,7 @@ async fn stream_anthropic(
     }
 
     // Emit end if we haven't yet (stream closed without message_stop)
-    if !full_response.is_empty() {
+    if !emitted_end && !full_response.is_empty() {
         let _ = app.emit("chat-stream-end", &full_response);
     }
 
@@ -201,6 +203,7 @@ async fn stream_openai(
     let mut stream = resp.bytes_stream();
     let mut full_response = String::new();
     let mut buffer = String::new();
+    let mut emitted_end = false;
 
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| format!("Stream error: {}", e))?;
@@ -214,6 +217,7 @@ async fn stream_openai(
                 let data = &line[6..];
                 if data == "[DONE]" {
                     let _ = app.emit("chat-stream-end", &full_response);
+                    emitted_end = true;
                     continue;
                 }
                 if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(data) {
@@ -224,6 +228,11 @@ async fn stream_openai(
                 }
             }
         }
+    }
+
+    // Emit end if we haven't yet (stream closed without [DONE])
+    if !emitted_end && !full_response.is_empty() {
+        let _ = app.emit("chat-stream-end", &full_response);
     }
 
     Ok(full_response)
