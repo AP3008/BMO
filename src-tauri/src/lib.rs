@@ -25,6 +25,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::config::get_config,
+            commands::config::switch_provider,
+            commands::config::get_available_providers,
             commands::llm::send_message,
         ])
         .run(tauri::generate_context!())

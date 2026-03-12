@@ -119,21 +119,54 @@ impl BmoConfig {
         }
     }
 
-    /// Returns `~/.bmo/.credentials`.
-    pub fn credentials_path() -> PathBuf {
+    /// Returns `~/.bmo/.env`.
+    pub fn env_path() -> PathBuf {
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-        PathBuf::from(home).join(".bmo").join(".credentials")
+        PathBuf::from(home).join(".bmo").join(".env")
     }
 
-    /// Save API key to `~/.bmo/.credentials` with owner-only permissions.
-    pub fn save_api_key(key: &str) -> Result<(), String> {
-        let path = Self::credentials_path();
+    /// Env var name for a provider's API key.
+    fn env_key_name(provider: &LlmProvider) -> Result<&'static str, String> {
+        match provider {
+            LlmProvider::Anthropic => Ok("ANTHROPIC_API_KEY"),
+            LlmProvider::OpenAI => Ok("OPENAI_API_KEY"),
+            LlmProvider::None => Err("No LLM provider configured.".into()),
+        }
+    }
+
+    /// Save an API key for a specific provider to `~/.bmo/.env`.
+    /// Preserves keys for other providers.
+    pub fn save_api_key(provider: &LlmProvider, key: &str) -> Result<(), String> {
+        let path = Self::env_path();
+        let var_name = Self::env_key_name(provider)?;
+
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)
                 .map_err(|e| format!("Could not create dir: {}", e))?;
         }
-        fs::write(&path, key)
-            .map_err(|e| format!("Could not write credentials: {}", e))?;
+
+        // Read existing .env content (or start empty)
+        let existing = fs::read_to_string(&path).unwrap_or_default();
+
+        // Rebuild: keep lines for OTHER providers, replace/add this one
+        let mut lines: Vec<String> = existing
+            .lines()
+            .filter(|line| {
+                let trimmed = line.trim();
+                // Keep comments, blank lines, and lines that aren't for this provider
+                trimmed.is_empty()
+                    || trimmed.starts_with('#')
+                    || !trimmed.starts_with(var_name)
+            })
+            .map(|s| s.to_string())
+            .collect();
+
+        lines.push(format!("{}={}", var_name, key));
+
+        let content = lines.join("\n") + "\n";
+        fs::write(&path, &content)
+            .map_err(|e| format!("Could not write .env: {}", e))?;
+
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -143,12 +176,54 @@ impl BmoConfig {
         Ok(())
     }
 
-    /// Load API key from `~/.bmo/.credentials`.
-    pub fn load_api_key() -> Result<String, String> {
-        let path = Self::credentials_path();
-        fs::read_to_string(&path)
-            .map(|s| s.trim().to_string())
-            .map_err(|e| format!("No API key found: {}", e))
+    /// Load an API key for a specific provider from `~/.bmo/.env`.
+    /// Falls back to migrating from old `~/.bmo/.credentials` if `.env` doesn't exist.
+    pub fn load_api_key(provider: &LlmProvider) -> Result<String, String> {
+        let var_name = Self::env_key_name(provider)?;
+        let path = Self::env_path();
+
+        // Migration: if old .credentials exists and .env doesn't, migrate
+        let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+        let old_creds = PathBuf::from(&home).join(".bmo").join(".credentials");
+        if !path.exists() && old_creds.exists() {
+            if let Ok(old_key) = fs::read_to_string(&old_creds) {
+                let old_key = old_key.trim().to_string();
+                if !old_key.is_empty() {
+                    // Best-effort: try to detect provider from key prefix
+                    let migrate_provider = if old_key.starts_with("sk-ant-") {
+                        LlmProvider::Anthropic
+                    } else {
+                        LlmProvider::OpenAI
+                    };
+                    let _ = Self::save_api_key(&migrate_provider, &old_key);
+                    let _ = fs::remove_file(&old_creds);
+                }
+            }
+        }
+
+        let contents = fs::read_to_string(&path)
+            .map_err(|_| format!("No API keys found. Run `bmo --settings` to add one."))?;
+
+        for line in contents.lines() {
+            let trimmed = line.trim();
+            if let Some(value) = trimmed.strip_prefix(var_name) {
+                if let Some(value) = value.strip_prefix('=') {
+                    let key = value.trim().to_string();
+                    if !key.is_empty() {
+                        return Ok(key);
+                    }
+                }
+            }
+        }
+
+        Err(format!(
+            "No {} key found in ~/.bmo/.env. Run `bmo --settings` to add one.",
+            match provider {
+                LlmProvider::Anthropic => "Anthropic",
+                LlmProvider::OpenAI => "OpenAI",
+                LlmProvider::None => "LLM",
+            }
+        ))
     }
 
     /// Write config to `~/.bmo/config.toml`.

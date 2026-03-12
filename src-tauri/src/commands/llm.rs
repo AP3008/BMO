@@ -24,7 +24,7 @@ pub async fn send_message(
     messages: Vec<ChatMessage>,
 ) -> Result<String, String> {
     let config = BmoConfig::load()?;
-    let api_key = BmoConfig::load_api_key()?;
+    let api_key = BmoConfig::load_api_key(&config.llm_provider)?;
 
     let trimmed = trim_history(&messages, 20);
 
@@ -57,6 +57,8 @@ async fn stream_anthropic(
 ) -> Result<String, String> {
     let client = reqwest::Client::new();
 
+    let system_prompt = format!("{}\n{}", base_prompt, dynamic_context);
+
     let api_messages: Vec<serde_json::Value> = messages
         .iter()
         .map(|m| {
@@ -71,17 +73,7 @@ async fn stream_anthropic(
         "model": "claude-sonnet-4-20250514",
         "max_tokens": 1024,
         "stream": true,
-        "system": [
-            {
-                "type": "text",
-                "text": base_prompt,
-                "cache_control": { "type": "ephemeral" }
-            },
-            {
-                "type": "text",
-                "text": dynamic_context
-            }
-        ],
+        "system": system_prompt,
         "messages": api_messages,
     });
 
@@ -93,12 +85,15 @@ async fn stream_anthropic(
         .json(&body)
         .send()
         .await
-        .map_err(|e| format!("Network error: {}", e))?;
+        .map_err(|e| format!("Could not reach Anthropic. Check your internet connection: {}", e))?;
 
     if !resp.status().is_success() {
         let status = resp.status();
         let body_text = resp.text().await.unwrap_or_default();
-        return Err(format!("Anthropic API error (HTTP {}): {}", status, body_text));
+        return match status.as_u16() {
+            401 | 403 => Err("API key invalid or expired. Run `bmo --settings` to update it.".into()),
+            _ => Err(format!("Anthropic API error (HTTP {}): {}", status, body_text)),
+        };
     }
 
     let mut stream = resp.bytes_stream();
@@ -186,12 +181,15 @@ async fn stream_openai(
         .json(&body)
         .send()
         .await
-        .map_err(|e| format!("Network error: {}", e))?;
+        .map_err(|e| format!("Could not reach OpenAI. Check your internet connection: {}", e))?;
 
     if !resp.status().is_success() {
         let status = resp.status();
         let body_text = resp.text().await.unwrap_or_default();
-        return Err(format!("OpenAI API error (HTTP {}): {}", status, body_text));
+        return match status.as_u16() {
+            401 | 403 => Err("API key invalid or expired. Run `bmo --settings` to update it.".into()),
+            _ => Err(format!("OpenAI API error (HTTP {}): {}", status, body_text)),
+        };
     }
 
     let mut stream = resp.bytes_stream();

@@ -1,6 +1,6 @@
 use crate::config::{BmoConfig, LlmProvider, NotesConfig, NotesMode, ScreenSide};
-use console::style;
-use dialoguer::{Confirm, Input, Password, Select};
+use console::{style, Term};
+use dialoguer::{Confirm, Input, Select};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::fs;
 use std::path::PathBuf;
@@ -29,6 +29,34 @@ fn notes_mode_index(mode: &NotesMode) -> usize {
         NotesMode::Local => 0,
         NotesMode::Obsidian => 1,
     }
+}
+
+/// Read input while displaying asterisks for each character.
+fn read_masked_input(prompt: &str) -> String {
+    let term = Term::stderr();
+    let _ = term.write_str(&format!("{}: ", prompt));
+    let mut key = String::new();
+    loop {
+        match term.read_key() {
+            Ok(console::Key::Char(c)) => {
+                key.push(c);
+                let _ = term.write_str("*");
+            }
+            Ok(console::Key::Backspace) => {
+                if !key.is_empty() {
+                    key.pop();
+                    let _ = term.clear_line();
+                    let _ = term.write_str(&format!("\r{}: {}", prompt, "*".repeat(key.len())));
+                }
+            }
+            Ok(console::Key::Enter) => {
+                let _ = term.write_line("");
+                break;
+            }
+            _ => {}
+        }
+    }
+    key.trim().to_string()
 }
 
 /// Run the init/settings wizard. Pass `Some(&config)` to pre-fill with existing values.
@@ -171,14 +199,11 @@ pub fn run(prefill: Option<&BmoConfig>) {
         }
 
         println!();
-        let key: String = Password::new()
-            .with_prompt(
-                style(format!("Paste your {} API key", label))
-                    .green()
-                    .to_string(),
-            )
-            .interact()
-            .unwrap_or_default();
+        let key: String = read_masked_input(
+            &style(format!("Paste your {} API key", label))
+                .green()
+                .to_string(),
+        );
 
         if !key.is_empty() {
             // Validate
@@ -216,13 +241,13 @@ pub fn run(prefill: Option<&BmoConfig>) {
                 }
             }
 
-            // Store to ~/.bmo/.credentials
-            match BmoConfig::save_api_key(&key) {
+            // Store to ~/.bmo/.env
+            match BmoConfig::save_api_key(&llm_provider, &key) {
                 Ok(()) => {
                     println!(
                         "  {} {}",
                         style("✔").green().bold(),
-                        style("API key saved to ~/.bmo/.credentials").green()
+                        style("API key saved to ~/.bmo/.env").green()
                     );
                 }
                 Err(e) => {
