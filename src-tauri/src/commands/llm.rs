@@ -1,10 +1,8 @@
 use crate::config::{BmoConfig, LlmProvider};
 use crate::memory;
-use crate::prompts::{build_system_prompt, should_inject_context, SUMMARIZE_SESSION_PROMPT};
+use crate::prompts::{build_system_prompt, should_inject_context, SUMMARIZE_SESSION_PROMPT, NOTE_RETRIEVAL_PROMPT};
 use futures_util::StreamExt;
-use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
-use std::sync::Mutex;
 use tauri::Emitter;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -24,7 +22,6 @@ fn trim_history(messages: &[ChatMessage], max: usize) -> Vec<ChatMessage> {
 #[tauri::command]
 pub async fn send_message(
     app: tauri::AppHandle,
-    db: tauri::State<'_, Mutex<Connection>>,
     messages: Vec<ChatMessage>,
 ) -> Result<String, String> {
     let config = BmoConfig::load()?;
@@ -32,25 +29,33 @@ pub async fn send_message(
 
     let trimmed = trim_history(&messages, 20);
 
-    // Load rolling memory summary from DB
-    let memory_summary = {
-        let conn = db.lock().map_err(|e| format!("DB lock error: {}", e))?;
-        memory::db::get_summary(&conn)
-    };
+    // Load rolling memory from _memory.md
+    let memory_summary = memory::db::get_memory(&config);
 
     let last_user_msg = trimmed
         .last()
         .map(|m| m.content.as_str())
         .unwrap_or("");
-    let context_flags = should_inject_context(last_user_msg);
-    let (base_prompt, dynamic_context) = build_system_prompt(&config, &context_flags, memory_summary.as_deref());
 
-    // Resolve effective model — use stored value or fall back to provider default
+    // Resolve provider string
     let provider_str = match config.llm_provider {
         LlmProvider::Anthropic => "anthropic",
         LlmProvider::OpenAI => "openai",
         LlmProvider::None => "",
     };
+
+    // Auto-retrieve relevant notes
+    let notes_context = retrieve_relevant_notes(&config, &api_key, provider_str, last_user_msg).await;
+
+    let context_flags = should_inject_context(last_user_msg);
+    let (base_prompt, dynamic_context) = build_system_prompt(
+        &config,
+        &context_flags,
+        memory_summary.as_deref(),
+        notes_context.as_deref(),
+    );
+
+    // Resolve effective model — use stored value or fall back to provider default
     let effective_model = if config.llm_model.is_empty() {
         crate::commands::config::default_model_for_provider(provider_str).to_string()
     } else {
@@ -262,11 +267,93 @@ async fn stream_openai(
     Ok(full_response)
 }
 
+// ── Note retrieval ─────────────────────────────────────────────────────────
+
+/// Use the cheapest model to pick a relevant note from the user's notes folder.
+async fn retrieve_relevant_notes(
+    config: &BmoConfig,
+    api_key: &str,
+    provider_str: &str,
+    user_message: &str,
+) -> Option<String> {
+    let filenames = memory::db::list_notes(config).ok()?;
+    if filenames.is_empty() {
+        return None;
+    }
+
+    // Always use the cheapest model for retrieval
+    let cheap_model = crate::commands::config::models_for_provider(provider_str)
+        .first()
+        .map(|(id, _)| id.to_string())?;
+
+    let file_list = filenames.join("\n");
+    let user_content = format!(
+        "User's question: {}\n\nAvailable notes:\n{}",
+        user_message, file_list
+    );
+
+    let client = reqwest::Client::new();
+
+    let chosen_file = match provider_str {
+        "anthropic" => {
+            let body = serde_json::json!({
+                "model": cheap_model,
+                "max_tokens": 100,
+                "system": NOTE_RETRIEVAL_PROMPT,
+                "messages": [{ "role": "user", "content": user_content }],
+            });
+            let resp = client
+                .post("https://api.anthropic.com/v1/messages")
+                .header("x-api-key", api_key)
+                .header("anthropic-version", "2023-06-01")
+                .header("content-type", "application/json")
+                .json(&body)
+                .send()
+                .await
+                .ok()?;
+            if !resp.status().is_success() {
+                return None;
+            }
+            let parsed: serde_json::Value = resp.json().await.ok()?;
+            parsed["content"][0]["text"].as_str()?.trim().to_string()
+        }
+        "openai" => {
+            let body = serde_json::json!({
+                "model": cheap_model,
+                "max_tokens": 100,
+                "messages": [
+                    { "role": "system", "content": NOTE_RETRIEVAL_PROMPT },
+                    { "role": "user", "content": user_content },
+                ],
+            });
+            let resp = client
+                .post("https://api.openai.com/v1/chat/completions")
+                .header("Authorization", format!("Bearer {}", api_key))
+                .header("Content-Type", "application/json")
+                .json(&body)
+                .send()
+                .await
+                .ok()?;
+            if !resp.status().is_success() {
+                return None;
+            }
+            let parsed: serde_json::Value = resp.json().await.ok()?;
+            parsed["choices"][0]["message"]["content"].as_str()?.trim().to_string()
+        }
+        _ => return None,
+    };
+
+    if chosen_file == "NONE" || !filenames.contains(&chosen_file) {
+        return None;
+    }
+
+    memory::db::read_note(config, &chosen_file).ok()
+}
+
 // ── Session summarization ──────────────────────────────────────────────────
 
 #[tauri::command]
 pub async fn summarize_session(
-    db: tauri::State<'_, Mutex<Connection>>,
     messages: Vec<ChatMessage>,
 ) -> Result<(), String> {
     if messages.is_empty() {
@@ -276,15 +363,12 @@ pub async fn summarize_session(
     let config = BmoConfig::load()?;
     let api_key = BmoConfig::load_api_key(&config.llm_provider)?;
 
-    // Load previous summary
-    let previous_summary = {
-        let conn = db.lock().map_err(|e| format!("DB lock error: {}", e))?;
-        memory::db::get_summary(&conn)
-    };
+    // Load previous memory from _memory.md
+    let previous_memory = memory::db::get_memory(&config);
 
     // Build the summarization prompt
     let mut system = SUMMARIZE_SESSION_PROMPT.to_string();
-    if let Some(ref prev) = previous_summary {
+    if let Some(ref prev) = previous_memory {
         system.push_str("\n\n--- PREVIOUS SUMMARY ---\n");
         system.push_str(prev);
     }
@@ -374,8 +458,7 @@ pub async fn summarize_session(
     };
 
     if !summary.is_empty() {
-        let conn = db.lock().map_err(|e| format!("DB lock error: {}", e))?;
-        memory::db::save_summary(&conn, &summary)?;
+        memory::db::save_memory(&config, &summary)?;
     }
 
     Ok(())

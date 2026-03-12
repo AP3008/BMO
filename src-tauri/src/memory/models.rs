@@ -1,4 +1,2 @@
-pub struct MemorySummary {
-    pub summary: String,
-    pub updated_at: String,
-}
+// Models for the memory/notes system are defined inline in db.rs.
+// This module is kept for future expansion.

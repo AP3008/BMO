@@ -17,7 +17,11 @@ pub const BMO_SYSTEM_PROMPT: &str = r#"You are BMO — a small, cheerful game co
 - Never generate harmful, illegal, or inappropriate content
 - If asked to do something you can't do, suggest what you CAN do instead
 - Do not use markdown headers or long bullet lists — keep it conversational
-- Never use emojis of any kind in your responses"#;
+- Never use emojis of any kind in your responses
+
+## Capabilities
+- You can write notes for the user. When asked to take a note or save something, confirm what you'll write.
+- You have access to the user's notes and can reference them when answering questions."#;
 
 pub const ASSISTANT_SYSTEM_PROMPT: &str = r#"You are a desktop sidebar assistant. You help the user by answering questions, providing information, and assisting with tasks.
 
@@ -33,7 +37,11 @@ pub const ASSISTANT_SYSTEM_PROMPT: &str = r#"You are a desktop sidebar assistant
 - Never generate harmful, illegal, or inappropriate content
 - If asked to do something you can't do, suggest what you CAN do instead
 - Do not use markdown headers or long bullet lists — keep it conversational
-- Never use emojis of any kind in your responses"#;
+- Never use emojis of any kind in your responses
+
+## Capabilities
+- You can write notes for the user. When asked to take a note or save something, confirm what you'll write.
+- You have access to the user's notes and can reference them when answering questions."#;
 
 pub const SUMMARIZE_SESSION_PROMPT: &str = r#"You are summarizing a conversation session for long-term memory. Extract and organize:
 
@@ -48,6 +56,12 @@ You will also receive a PREVIOUS SUMMARY (if one exists). Your job is to produce
 - Stays concise — aim for 200-400 words max
 
 Output ONLY the summary text, no headers or preamble."#;
+
+pub const NOTE_RETRIEVAL_PROMPT: &str = r#"You are a file retrieval helper. Given a user's question and a list of note filenames, return the SINGLE filename that is most likely to contain relevant information for answering the question.
+
+If no file seems relevant, return exactly: NONE
+
+Return ONLY the filename, nothing else."#;
 
 /// Context flags determined by keyword analysis of the user's message.
 pub struct ContextFlags {
@@ -86,7 +100,8 @@ pub fn should_inject_context(user_message: &str) -> ContextFlags {
 /// Build the full system prompt. The base personality is always included (cacheable).
 /// Dynamic context sections are appended only when flagged.
 /// `memory` is the rolling session summary — always injected if present.
-pub fn build_system_prompt(config: &BmoConfig, flags: &ContextFlags, memory: Option<&str>) -> (String, String) {
+/// `notes_context` is content from a relevant note — injected if retrieved.
+pub fn build_system_prompt(config: &BmoConfig, flags: &ContextFlags, memory: Option<&str>, notes_context: Option<&str>) -> (String, String) {
     // Base prompt — stable across requests, good for caching
     let base = if config.personality_enabled {
         BMO_SYSTEM_PROMPT.to_string()
@@ -106,6 +121,12 @@ pub fn build_system_prompt(config: &BmoConfig, flags: &ContextFlags, memory: Opt
     if let Some(summary) = memory {
         dynamic.push_str("\n\n## What you remember about the user\n");
         dynamic.push_str(summary);
+    }
+
+    // Inject relevant note content if retrieved
+    if let Some(notes) = notes_context {
+        dynamic.push_str("\n\n## Relevant note\n");
+        dynamic.push_str(notes);
     }
 
     if flags.include_calendar {
