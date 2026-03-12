@@ -27,7 +27,8 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 dialoguer = "0.11"
 console = "0.15"
 tokio = { version = "1", features = ["full"] }
-reqwest = { version = "0.12", features = ["json", "blocking"] }
+reqwest = { version = "0.12", features = ["json", "blocking", "stream"] }
+futures-util = "0.3"
 clap = { version = "4", features = ["derive"] }
 indicatif = "0.17"
 open = "5"

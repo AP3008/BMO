@@ -17,7 +17,6 @@ pub enum ScreenSide {
 pub enum LlmProvider {
     OpenAI,
     Anthropic,
-    Ollama,
     #[default]
     None,
 }
@@ -114,17 +113,6 @@ impl BmoConfig {
                     Ok(())
                 } else {
                     Err(format!("HTTP {}", resp.status()))
-                }
-            }
-            LlmProvider::Ollama => {
-                let resp = client
-                    .get("http://localhost:11434/api/tags")
-                    .send()
-                    .map_err(|e| format!("Ollama not reachable: {}", e))?;
-                if resp.status().is_success() {
-                    Ok(())
-                } else {
-                    Err(format!("Ollama returned HTTP {}", resp.status()))
                 }
             }
             LlmProvider::None => Ok(()),

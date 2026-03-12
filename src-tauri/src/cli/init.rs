@@ -19,8 +19,7 @@ fn llm_provider_index(provider: &LlmProvider) -> usize {
     match provider {
         LlmProvider::OpenAI => 0,
         LlmProvider::Anthropic => 1,
-        LlmProvider::Ollama => 2,
-        LlmProvider::None => 3,
+        LlmProvider::None => 2,
     }
 }
 
@@ -121,18 +120,17 @@ pub fn run(prefill: Option<&BmoConfig>) {
         style("── LLM Configuration ──").cyan().bold()
     );
     println!();
-    let llm_items = &["OpenAI", "Anthropic", "Ollama (local)", "Skip (no LLM)"];
-    let llm_default = prefill.map_or(3, |c| llm_provider_index(&c.llm_provider));
+    let llm_items = &["OpenAI", "Anthropic", "Skip (no LLM)"];
+    let llm_default = prefill.map_or(2, |c| llm_provider_index(&c.llm_provider));
     let llm_idx = Select::new()
         .with_prompt(style("Choose an LLM provider").green().to_string())
         .items(llm_items)
         .default(llm_default)
         .interact()
-        .unwrap_or(3);
+        .unwrap_or(2);
     let llm_provider = match llm_idx {
         0 => LlmProvider::OpenAI,
         1 => LlmProvider::Anthropic,
-        2 => LlmProvider::Ollama,
         _ => LlmProvider::None,
     };
 
@@ -234,54 +232,6 @@ pub fn run(prefill: Option<&BmoConfig>) {
                         style(format!("Could not save key: {}", e)).yellow()
                     );
                 }
-            }
-        }
-    }
-
-    // ── 4b. Ollama connectivity check ────────────────────────────────────────
-    if matches!(llm_provider, LlmProvider::Ollama) {
-        println!();
-        println!(
-            "  {}",
-            style("Ollama runs locally — no API key needed.").dim()
-        );
-        println!(
-            "  {} {}",
-            style("Make sure Ollama is running:").dim(),
-            style("ollama serve").cyan()
-        );
-
-        let spinner = ProgressBar::new_spinner();
-        spinner.set_style(
-            ProgressStyle::with_template("{spinner:.cyan} {msg}")
-                .unwrap()
-                .tick_strings(&[
-                    "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏", " ",
-                ]),
-        );
-        spinner.set_message("Checking Ollama connection...");
-        spinner.enable_steady_tick(Duration::from_millis(80));
-
-        match BmoConfig::validate_api_key(&LlmProvider::Ollama, "") {
-            Ok(()) => {
-                spinner.finish_and_clear();
-                println!(
-                    "  {} {}",
-                    style("✔").green().bold(),
-                    style("Ollama is running!").green().bold()
-                );
-            }
-            Err(e) => {
-                spinner.finish_and_clear();
-                println!(
-                    "  {} {}",
-                    style("⚠").yellow(),
-                    style(format!(
-                        "Ollama not reachable ({}). Make sure to run `ollama serve` before using BMO.",
-                        e
-                    ))
-                    .yellow()
-                );
             }
         }
     }
