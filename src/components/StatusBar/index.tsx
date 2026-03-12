@@ -25,6 +25,8 @@ export function StatusBar() {
   const [now, setNow] = useState(new Date());
   const upcomingEvents = useBmoStore((s) => s.upcomingEvents);
   const activeTimer = useBmoStore((s) => s.activeTimer);
+  const activePanel = useBmoStore((s) => s.activePanel);
+  const setActivePanel = useBmoStore((s) => s.setActivePanel);
 
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 1000);
@@ -58,8 +60,25 @@ export function StatusBar() {
         )}
       </span>
 
-      {/* Spacer to balance layout */}
-      <span className="w-10" />
+      {/* Settings gear */}
+      <button
+        onClick={() =>
+          setActivePanel(activePanel === "settings" ? null : "settings")
+        }
+        className="w-8 h-7 flex items-center justify-center rounded"
+        title="Settings"
+        style={{
+          backgroundColor:
+            activePanel === "settings"
+              ? "rgba(255,255,255,0.15)"
+              : "transparent",
+          color: "#fff",
+          cursor: "pointer",
+          fontSize: "14px",
+        }}
+      >
+        &#x2699;
+      </button>
     </div>
   );
 }

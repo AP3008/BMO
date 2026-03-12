@@ -1,10 +1,11 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { motion } from "framer-motion";
 import { getCurrentWindow, primaryMonitor } from "@tauri-apps/api/window";
 import { LogicalSize, LogicalPosition } from "@tauri-apps/api/dpi";
 import { useBmoStore } from "../../store";
 import { BmoFace } from "../BmoFace";
 import { Chat } from "../Chat";
+import { SettingsPanel } from "../Setup";
 import { StatusBar } from "../StatusBar";
 
 const SIDEBAR_W = 260;
@@ -35,14 +36,13 @@ export function Sidebar() {
   const toggleCollapsed = useBmoStore((s) => s.toggleCollapsed);
   const settingsLoaded = useBmoStore((s) => s.settingsLoaded);
   const screenSide = useBmoStore((s) => s.settings?.screen_side ?? "right");
-  const didInit = useRef(false);
+  const activePanel = useBmoStore((s) => s.activePanel);
 
   const isLeft = screenSide === "left";
 
-  // Position window once settings are loaded
+  // Position window when settings load or screen side changes
   useEffect(() => {
-    if (settingsLoaded && !didInit.current) {
-      didInit.current = true;
+    if (settingsLoaded) {
       initWindow(screenSide);
     }
   }, [settingsLoaded, screenSide]);
@@ -103,7 +103,7 @@ export function Sidebar() {
             className="flex-1 flex flex-col overflow-hidden"
             style={{ borderTop: "1px solid rgba(4,120,119,0.2)" }}
           >
-            <Chat />
+            {activePanel === "settings" ? <SettingsPanel /> : <Chat />}
           </div>
         </main>
 

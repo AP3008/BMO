@@ -151,6 +151,22 @@ pub fn save_config(payload: SaveConfigPayload) -> Result<BmoConfig, String> {
 }
 
 #[tauri::command]
+pub fn get_masked_api_key(provider: String) -> Result<String, String> {
+    let provider_enum = match provider.as_str() {
+        "anthropic" => LlmProvider::Anthropic,
+        "openai" => LlmProvider::OpenAI,
+        _ => return Err("Unknown provider".into()),
+    };
+    let key = BmoConfig::load_api_key(&provider_enum)?;
+    let len = key.len();
+    if len > 10 {
+        Ok(format!("{}...{}", &key[..6], &key[len - 4..]))
+    } else {
+        Ok("***".into())
+    }
+}
+
+#[tauri::command]
 pub fn save_api_key_cmd(provider: String, key: String) -> Result<(), String> {
     let provider_enum = match provider.as_str() {
         "anthropic" => LlmProvider::Anthropic,
