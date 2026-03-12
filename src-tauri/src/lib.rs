@@ -5,6 +5,7 @@ pub mod memory;
 pub mod prompts;
 pub mod scheduler;
 pub mod google;
+pub mod tools;
 
 pub fn config_exists() -> bool {
     let home = std::env::var("HOME").unwrap_or_default();

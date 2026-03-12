@@ -116,6 +116,10 @@ interface BmoStore {
   // Model switching
   availableModels: ModelInfo[];
   setAvailableModels: (m: ModelInfo[]) => void;
+
+  // Tool status
+  toolStatus: string | null;
+  setToolStatus: (s: string | null) => void;
 }
 
 // ── Store implementation ─────────────────────────────────────────────────────
@@ -174,4 +178,8 @@ export const useBmoStore = create<BmoStore>((set) => ({
   // Model switching
   availableModels: [],
   setAvailableModels: (m) => set({ availableModels: m }),
+
+  // Tool status
+  toolStatus: null,
+  setToolStatus: (s) => set({ toolStatus: s }),
 }));

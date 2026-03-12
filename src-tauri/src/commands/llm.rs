@@ -1,9 +1,12 @@
 use crate::config::{BmoConfig, LlmProvider};
 use crate::memory;
-use crate::prompts::{build_system_prompt, should_inject_context, SUMMARIZE_SESSION_PROMPT, NOTE_RETRIEVAL_PROMPT};
+use crate::prompts::{build_system_prompt, should_inject_context, SUMMARIZE_SESSION_PROMPT};
+use crate::tools;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use tauri::Emitter;
+
+const MAX_TOOL_ROUNDS: usize = 5;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
@@ -17,6 +20,12 @@ fn trim_history(messages: &[ChatMessage], max: usize) -> Vec<ChatMessage> {
         return messages.to_vec();
     }
     messages[messages.len() - max..].to_vec()
+}
+
+/// Result of a single streaming call — either final text or tool calls to execute.
+enum StreamResult {
+    Text(String),
+    ToolCalls(serde_json::Value, Vec<tools::ToolCall>),
 }
 
 #[tauri::command]
@@ -37,40 +46,104 @@ pub async fn send_message(
         .map(|m| m.content.as_str())
         .unwrap_or("");
 
-    // Resolve provider string
-    let provider_str = match config.llm_provider {
-        LlmProvider::Anthropic => "anthropic",
-        LlmProvider::OpenAI => "openai",
-        LlmProvider::None => "",
-    };
-
-    // Auto-retrieve relevant notes
-    let notes_context = retrieve_relevant_notes(&config, &api_key, provider_str, last_user_msg).await;
-
     let context_flags = should_inject_context(last_user_msg);
     let (base_prompt, dynamic_context) = build_system_prompt(
         &config,
         &context_flags,
         memory_summary.as_deref(),
-        notes_context.as_deref(),
     );
 
-    // Resolve effective model — use stored value or fall back to provider default
+    // Resolve effective model
+    let provider_str = match config.llm_provider {
+        LlmProvider::Anthropic => "anthropic",
+        LlmProvider::OpenAI => "openai",
+        LlmProvider::None => "",
+    };
     let effective_model = if config.llm_model.is_empty() {
         crate::commands::config::default_model_for_provider(provider_str).to_string()
     } else {
         config.llm_model.clone()
     };
 
-    match config.llm_provider {
+    // Convert ChatMessages to provider-specific JSON
+    let system_prompt = format!("{}\n{}", base_prompt, dynamic_context);
+
+    let mut api_messages: Vec<serde_json::Value> = match config.llm_provider {
         LlmProvider::Anthropic => {
-            stream_anthropic(&app, &api_key, &base_prompt, &dynamic_context, &trimmed, &effective_model).await
+            trimmed.iter().map(|m| {
+                serde_json::json!({ "role": m.role, "content": m.content })
+            }).collect()
         }
         LlmProvider::OpenAI => {
-            stream_openai(&app, &api_key, &base_prompt, &dynamic_context, &trimmed, &effective_model).await
+            let mut msgs = vec![serde_json::json!({
+                "role": "system",
+                "content": system_prompt,
+            })];
+            for m in &trimmed {
+                msgs.push(serde_json::json!({ "role": m.role, "content": m.content }));
+            }
+            msgs
         }
-        LlmProvider::None => Err("No LLM provider configured. Run `bmo --settings`.".into()),
+        LlmProvider::None => {
+            return Err("No LLM provider configured. Run `bmo --settings`.".into());
+        }
+    };
+
+    // Tool loop
+    for _round in 0..MAX_TOOL_ROUNDS {
+        let result = match config.llm_provider {
+            LlmProvider::Anthropic => {
+                stream_anthropic(&app, &api_key, &system_prompt, &api_messages, &effective_model).await?
+            }
+            LlmProvider::OpenAI => {
+                stream_openai(&app, &api_key, &api_messages, &effective_model).await?
+            }
+            LlmProvider::None => unreachable!(),
+        };
+
+        match result {
+            StreamResult::Text(text) => {
+                let _ = app.emit("chat-stream-end", &text);
+                return Ok(text);
+            }
+            StreamResult::ToolCalls(assistant_msg, calls) => {
+                // Append the assistant message (with tool_use blocks) to conversation
+                api_messages.push(assistant_msg);
+
+                // Execute each tool and append results
+                for call in &calls {
+                    let label = tools::tool_status_label(&call.name);
+                    let _ = app.emit("chat-tool-status", label);
+
+                    let tool_result = tools::execute_tool(&config, call);
+
+                    match config.llm_provider {
+                        LlmProvider::Anthropic => {
+                            api_messages.push(serde_json::json!({
+                                "role": "user",
+                                "content": [{
+                                    "type": "tool_result",
+                                    "tool_use_id": tool_result.tool_call_id,
+                                    "content": tool_result.content,
+                                    "is_error": tool_result.is_error,
+                                }]
+                            }));
+                        }
+                        LlmProvider::OpenAI => {
+                            api_messages.push(serde_json::json!({
+                                "role": "tool",
+                                "tool_call_id": tool_result.tool_call_id,
+                                "content": tool_result.content,
+                            }));
+                        }
+                        LlmProvider::None => unreachable!(),
+                    }
+                }
+            }
+        }
     }
+
+    Err("Too many tool rounds".into())
 }
 
 // ── Anthropic streaming ─────────────────────────────────────────────────────
@@ -78,31 +151,19 @@ pub async fn send_message(
 async fn stream_anthropic(
     app: &tauri::AppHandle,
     api_key: &str,
-    base_prompt: &str,
-    dynamic_context: &str,
-    messages: &[ChatMessage],
+    system_prompt: &str,
+    messages: &[serde_json::Value],
     model: &str,
-) -> Result<String, String> {
+) -> Result<StreamResult, String> {
     let client = reqwest::Client::new();
-
-    let system_prompt = format!("{}\n{}", base_prompt, dynamic_context);
-
-    let api_messages: Vec<serde_json::Value> = messages
-        .iter()
-        .map(|m| {
-            serde_json::json!({
-                "role": m.role,
-                "content": m.content,
-            })
-        })
-        .collect();
 
     let body = serde_json::json!({
         "model": model,
         "max_tokens": 1024,
         "stream": true,
         "system": system_prompt,
-        "messages": api_messages,
+        "messages": messages,
+        "tools": tools::anthropic_tools(),
     });
 
     let resp = client
@@ -130,7 +191,14 @@ async fn stream_anthropic(
     let mut stream = resp.bytes_stream();
     let mut full_response = String::new();
     let mut buffer = String::new();
-    let mut emitted_end = false;
+
+    // Tool tracking state
+    let mut current_tool_id: Option<String> = None;
+    let mut current_tool_name: Option<String> = None;
+    let mut tool_json_buffer = String::new();
+    let mut accumulated_tools: Vec<tools::ToolCall> = Vec::new();
+    let mut content_blocks: Vec<serde_json::Value> = Vec::new();
+    let mut stop_reason: Option<String> = None;
 
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| format!("Stream error: {}", e))?;
@@ -140,39 +208,98 @@ async fn stream_anthropic(
             let line = buffer[..line_end].trim().to_string();
             buffer = buffer[line_end + 1..].to_string();
 
-            if line.starts_with("data: ") {
-                let data = &line[6..];
-                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(data) {
-                    match parsed["type"].as_str() {
-                        Some("content_block_delta") => {
-                            if let Some(text) = parsed["delta"]["text"].as_str() {
+            if !line.starts_with("data: ") {
+                continue;
+            }
+            let data = &line[6..];
+            let parsed = match serde_json::from_str::<serde_json::Value>(data) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+
+            match parsed["type"].as_str() {
+                Some("content_block_start") => {
+                    let block = &parsed["content_block"];
+                    if block["type"].as_str() == Some("tool_use") {
+                        let id = block["id"].as_str().unwrap_or("").to_string();
+                        let name = block["name"].as_str().unwrap_or("").to_string();
+                        let label = tools::tool_status_label(&name);
+                        let _ = app.emit("chat-tool-status", label);
+                        current_tool_id = Some(id);
+                        current_tool_name = Some(name);
+                        tool_json_buffer.clear();
+                    }
+                }
+                Some("content_block_delta") => {
+                    let delta = &parsed["delta"];
+                    match delta["type"].as_str() {
+                        Some("text_delta") => {
+                            if let Some(text) = delta["text"].as_str() {
                                 full_response.push_str(text);
                                 let _ = app.emit("chat-stream", text);
                             }
                         }
-                        Some("message_stop") => {
-                            let _ = app.emit("chat-stream-end", &full_response);
-                            emitted_end = true;
-                        }
-                        Some("error") => {
-                            let err_msg = parsed["error"]["message"]
-                                .as_str()
-                                .unwrap_or("Unknown API error");
-                            return Err(format!("Anthropic error: {}", err_msg));
+                        Some("input_json_delta") => {
+                            if let Some(json_chunk) = delta["partial_json"].as_str() {
+                                tool_json_buffer.push_str(json_chunk);
+                            }
                         }
                         _ => {}
                     }
                 }
+                Some("content_block_stop") => {
+                    if let (Some(id), Some(name)) = (current_tool_id.take(), current_tool_name.take()) {
+                        let arguments: serde_json::Value = serde_json::from_str(&tool_json_buffer)
+                            .unwrap_or(serde_json::json!({}));
+                        content_blocks.push(serde_json::json!({
+                            "type": "tool_use",
+                            "id": id,
+                            "name": name,
+                            "input": arguments,
+                        }));
+                        accumulated_tools.push(tools::ToolCall {
+                            id,
+                            name,
+                            arguments,
+                        });
+                        tool_json_buffer.clear();
+                    }
+                }
+                Some("message_delta") => {
+                    if let Some(reason) = parsed["delta"]["stop_reason"].as_str() {
+                        stop_reason = Some(reason.to_string());
+                    }
+                }
+                Some("error") => {
+                    let err_msg = parsed["error"]["message"]
+                        .as_str()
+                        .unwrap_or("Unknown API error");
+                    return Err(format!("Anthropic error: {}", err_msg));
+                }
+                _ => {}
             }
         }
     }
 
-    // Emit end if we haven't yet (stream closed without message_stop)
-    if !emitted_end && !full_response.is_empty() {
-        let _ = app.emit("chat-stream-end", &full_response);
-    }
+    if stop_reason.as_deref() == Some("tool_use") && !accumulated_tools.is_empty() {
+        // Build the assistant message with all content blocks
+        let mut all_blocks = Vec::new();
+        if !full_response.is_empty() {
+            all_blocks.push(serde_json::json!({
+                "type": "text",
+                "text": full_response,
+            }));
+        }
+        all_blocks.extend(content_blocks);
 
-    Ok(full_response)
+        let assistant_msg = serde_json::json!({
+            "role": "assistant",
+            "content": all_blocks,
+        });
+        Ok(StreamResult::ToolCalls(assistant_msg, accumulated_tools))
+    } else {
+        Ok(StreamResult::Text(full_response))
+    }
 }
 
 // ── OpenAI streaming ────────────────────────────────────────────────────────
@@ -180,32 +307,17 @@ async fn stream_anthropic(
 async fn stream_openai(
     app: &tauri::AppHandle,
     api_key: &str,
-    base_prompt: &str,
-    dynamic_context: &str,
-    messages: &[ChatMessage],
+    messages: &[serde_json::Value],
     model: &str,
-) -> Result<String, String> {
+) -> Result<StreamResult, String> {
     let client = reqwest::Client::new();
-
-    let system_prompt = format!("{}\n{}", base_prompt, dynamic_context);
-
-    let mut api_messages: Vec<serde_json::Value> = vec![serde_json::json!({
-        "role": "system",
-        "content": system_prompt,
-    })];
-
-    for m in messages {
-        api_messages.push(serde_json::json!({
-            "role": m.role,
-            "content": m.content,
-        }));
-    }
 
     let body = serde_json::json!({
         "model": model,
         "max_tokens": 1024,
         "stream": true,
-        "messages": api_messages,
+        "messages": messages,
+        "tools": tools::openai_tools(),
     });
 
     let resp = client
@@ -232,7 +344,10 @@ async fn stream_openai(
     let mut stream = resp.bytes_stream();
     let mut full_response = String::new();
     let mut buffer = String::new();
-    let mut emitted_end = false;
+
+    // Tool tracking: Vec<(id, name, args_buffer)>
+    let mut tool_calls_acc: Vec<(String, String, String)> = Vec::new();
+    let mut finish_reason: Option<String> = None;
 
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| format!("Stream error: {}", e))?;
@@ -242,112 +357,102 @@ async fn stream_openai(
             let line = buffer[..line_end].trim().to_string();
             buffer = buffer[line_end + 1..].to_string();
 
-            if line.starts_with("data: ") {
-                let data = &line[6..];
-                if data == "[DONE]" {
-                    let _ = app.emit("chat-stream-end", &full_response);
-                    emitted_end = true;
-                    continue;
-                }
-                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(data) {
-                    if let Some(content) = parsed["choices"][0]["delta"]["content"].as_str() {
-                        full_response.push_str(content);
-                        let _ = app.emit("chat-stream", content);
+            if !line.starts_with("data: ") {
+                continue;
+            }
+            let data = &line[6..];
+            if data == "[DONE]" {
+                continue;
+            }
+
+            let parsed = match serde_json::from_str::<serde_json::Value>(data) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+
+            let choice = &parsed["choices"][0];
+
+            // Check finish reason
+            if let Some(reason) = choice["finish_reason"].as_str() {
+                finish_reason = Some(reason.to_string());
+            }
+
+            let delta = &choice["delta"];
+
+            // Text content
+            if let Some(content) = delta["content"].as_str() {
+                full_response.push_str(content);
+                let _ = app.emit("chat-stream", content);
+            }
+
+            // Tool calls
+            if let Some(tc_arr) = delta["tool_calls"].as_array() {
+                for tc in tc_arr {
+                    let index = tc["index"].as_u64().unwrap_or(0) as usize;
+
+                    // Grow the vec if needed
+                    while tool_calls_acc.len() <= index {
+                        tool_calls_acc.push((String::new(), String::new(), String::new()));
+                    }
+
+                    if let Some(id) = tc["id"].as_str() {
+                        tool_calls_acc[index].0 = id.to_string();
+                    }
+                    if let Some(func) = tc["function"].as_object() {
+                        if let Some(name) = func.get("name").and_then(|n| n.as_str()) {
+                            tool_calls_acc[index].1 = name.to_string();
+                            let label = tools::tool_status_label(name);
+                            let _ = app.emit("chat-tool-status", label);
+                        }
+                        if let Some(args) = func.get("arguments").and_then(|a| a.as_str()) {
+                            tool_calls_acc[index].2.push_str(args);
+                        }
                     }
                 }
             }
         }
     }
 
-    // Emit end if we haven't yet (stream closed without [DONE])
-    if !emitted_end && !full_response.is_empty() {
-        let _ = app.emit("chat-stream-end", &full_response);
-    }
+    if (finish_reason.as_deref() == Some("tool_calls") || finish_reason.as_deref() == Some("stop"))
+        && !tool_calls_acc.is_empty()
+        && tool_calls_acc.iter().any(|(_, name, _)| !name.is_empty())
+    {
+        let mut calls = Vec::new();
+        let mut tc_json = Vec::new();
 
-    Ok(full_response)
-}
-
-// ── Note retrieval ─────────────────────────────────────────────────────────
-
-/// Use the cheapest model to pick a relevant note from the user's notes folder.
-async fn retrieve_relevant_notes(
-    config: &BmoConfig,
-    api_key: &str,
-    provider_str: &str,
-    user_message: &str,
-) -> Option<String> {
-    let filenames = memory::db::list_notes(config).ok()?;
-    if filenames.is_empty() {
-        return None;
-    }
-
-    // Always use the cheapest model for retrieval
-    let cheap_model = crate::commands::config::models_for_provider(provider_str)
-        .first()
-        .map(|(id, _)| id.to_string())?;
-
-    let file_list = filenames.join("\n");
-    let user_content = format!(
-        "User's question: {}\n\nAvailable notes:\n{}",
-        user_message, file_list
-    );
-
-    let client = reqwest::Client::new();
-
-    let chosen_file = match provider_str {
-        "anthropic" => {
-            let body = serde_json::json!({
-                "model": cheap_model,
-                "max_tokens": 100,
-                "system": NOTE_RETRIEVAL_PROMPT,
-                "messages": [{ "role": "user", "content": user_content }],
-            });
-            let resp = client
-                .post("https://api.anthropic.com/v1/messages")
-                .header("x-api-key", api_key)
-                .header("anthropic-version", "2023-06-01")
-                .header("content-type", "application/json")
-                .json(&body)
-                .send()
-                .await
-                .ok()?;
-            if !resp.status().is_success() {
-                return None;
+        for (id, name, args_buf) in &tool_calls_acc {
+            if name.is_empty() {
+                continue;
             }
-            let parsed: serde_json::Value = resp.json().await.ok()?;
-            parsed["content"][0]["text"].as_str()?.trim().to_string()
-        }
-        "openai" => {
-            let body = serde_json::json!({
-                "model": cheap_model,
-                "max_tokens": 100,
-                "messages": [
-                    { "role": "system", "content": NOTE_RETRIEVAL_PROMPT },
-                    { "role": "user", "content": user_content },
-                ],
+            let arguments: serde_json::Value = serde_json::from_str(args_buf)
+                .unwrap_or(serde_json::json!({}));
+            tc_json.push(serde_json::json!({
+                "id": id,
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "arguments": args_buf,
+                }
+            }));
+            calls.push(tools::ToolCall {
+                id: id.clone(),
+                name: name.clone(),
+                arguments,
             });
-            let resp = client
-                .post("https://api.openai.com/v1/chat/completions")
-                .header("Authorization", format!("Bearer {}", api_key))
-                .header("Content-Type", "application/json")
-                .json(&body)
-                .send()
-                .await
-                .ok()?;
-            if !resp.status().is_success() {
-                return None;
-            }
-            let parsed: serde_json::Value = resp.json().await.ok()?;
-            parsed["choices"][0]["message"]["content"].as_str()?.trim().to_string()
         }
-        _ => return None,
-    };
 
-    if chosen_file == "NONE" || !filenames.contains(&chosen_file) {
-        return None;
+        let mut assistant_msg = serde_json::json!({
+            "role": "assistant",
+            "tool_calls": tc_json,
+        });
+        if !full_response.is_empty() {
+            assistant_msg["content"] = serde_json::json!(full_response);
+        }
+
+        Ok(StreamResult::ToolCalls(assistant_msg, calls))
+    } else {
+        Ok(StreamResult::Text(full_response))
     }
-
-    memory::db::read_note(config, &chosen_file).ok()
 }
 
 // ── Session summarization ──────────────────────────────────────────────────

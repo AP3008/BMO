@@ -21,6 +21,8 @@ export function Chat() {
   const setExpression = useBmoStore((s) => s.setExpression);
   const appendStreamingContent = useBmoStore((s) => s.appendStreamingContent);
   const clearStreamingContent = useBmoStore((s) => s.clearStreamingContent);
+  const toolStatus = useBmoStore((s) => s.toolStatus);
+  const setToolStatus = useBmoStore((s) => s.setToolStatus);
 
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -36,10 +38,12 @@ export function Chat() {
   // Listen for streaming events
   useEffect(() => {
     const unlisten1 = listen<string>("chat-stream", (event) => {
+      setToolStatus(null);
       appendStreamingContent(event.payload);
     });
     const unlisten2 = listen<string>("chat-stream-end", (event) => {
       clearStreamingContent();
+      setToolStatus(null);
       addMessage({
         id: crypto.randomUUID(),
         role: "assistant",
@@ -49,11 +53,15 @@ export function Chat() {
       setIsLoading(false);
       setExpression("idle");
     });
+    const unlisten3 = listen<string>("chat-tool-status", (event) => {
+      setToolStatus(event.payload);
+    });
     return () => {
       unlisten1.then((f) => f());
       unlisten2.then((f) => f());
+      unlisten3.then((f) => f());
     };
-  }, [addMessage, appendStreamingContent, clearStreamingContent, setIsLoading, setExpression]);
+  }, [addMessage, appendStreamingContent, clearStreamingContent, setIsLoading, setExpression, setToolStatus]);
 
   // Idle timer — summarize session after 30 min of inactivity
   useEffect(() => {
@@ -86,6 +94,7 @@ export function Chat() {
     setIsLoading(true);
     setExpression("thinking");
     clearStreamingContent();
+    setToolStatus(null);
 
     // Reset textarea height
     if (textareaRef.current) {
@@ -186,8 +195,24 @@ export function Chat() {
           </div>
         )}
 
+        {/* Tool status indicator */}
+        {isLoading && !streamingContent && toolStatus && (
+          <div className="flex justify-start">
+            <div
+              className="rounded-xl px-3 py-1.5 text-xs italic"
+              style={{
+                backgroundColor: "rgba(255,255,255,0.15)",
+                color: "var(--bmo-teal-dark)",
+                opacity: 0.7,
+              }}
+            >
+              {toolStatus}
+            </div>
+          </div>
+        )}
+
         {/* Thinking indicator (before any content streams) */}
-        {isLoading && !streamingContent && (
+        {isLoading && !streamingContent && !toolStatus && (
           <div className="flex justify-start">
             <div
               className="rounded-xl px-3 py-1.5 text-xs"

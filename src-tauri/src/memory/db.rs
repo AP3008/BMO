@@ -23,10 +23,15 @@ pub fn notes_dir(config: &BmoConfig) -> Result<PathBuf, String> {
     Ok(dir)
 }
 
-/// Read `_memory.md` from the notes dir. Returns None if file doesn't exist.
+/// Read `_memory.md` from the notes dir. Auto-creates with default content if missing.
 pub fn get_memory(config: &BmoConfig) -> Option<String> {
     let dir = notes_dir(config).ok()?;
     let path = dir.join("_memory.md");
+    if !path.exists() {
+        let default = "# BMO Memory\n\nNo memories yet.\n";
+        let _ = fs::write(&path, default);
+        return Some(default.to_string());
+    }
     fs::read_to_string(&path).ok()
 }
 
