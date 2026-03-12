@@ -69,7 +69,9 @@ interface BmoStore {
   messages: Message[];
   isLoading: boolean;
   streamingContent: string;
+  lastMessageAt: number | null;
   addMessage: (msg: Message) => void;
+  clearMessages: () => void;
   setIsLoading: (v: boolean) => void;
   appendStreamingContent: (delta: string) => void;
   clearStreamingContent: () => void;
@@ -123,7 +125,9 @@ export const useBmoStore = create<BmoStore>((set) => ({
   messages: [],
   isLoading: false,
   streamingContent: "",
-  addMessage: (msg) => set((s) => ({ messages: [...s.messages, msg] })),
+  lastMessageAt: null,
+  addMessage: (msg) => set((s) => ({ messages: [...s.messages, msg], lastMessageAt: Date.now() })),
+  clearMessages: () => set({ messages: [], lastMessageAt: null }),
   setIsLoading: (v) => set({ isLoading: v }),
   appendStreamingContent: (delta) =>
     set((s) => ({ streamingContent: s.streamingContent + delta })),

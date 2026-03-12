@@ -8,11 +8,15 @@ interface ApiMessage {
   content: string;
 }
 
+const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+
 export function Chat() {
   const messages = useBmoStore((s) => s.messages);
   const isLoading = useBmoStore((s) => s.isLoading);
   const streamingContent = useBmoStore((s) => s.streamingContent);
   const addMessage = useBmoStore((s) => s.addMessage);
+  const clearMessages = useBmoStore((s) => s.clearMessages);
+  const lastMessageAt = useBmoStore((s) => s.lastMessageAt);
   const setIsLoading = useBmoStore((s) => s.setIsLoading);
   const setExpression = useBmoStore((s) => s.setExpression);
   const appendStreamingContent = useBmoStore((s) => s.appendStreamingContent);
@@ -50,6 +54,22 @@ export function Chat() {
       unlisten2.then((f) => f());
     };
   }, [addMessage, appendStreamingContent, clearStreamingContent, setIsLoading, setExpression]);
+
+  // Idle timer — summarize session after 30 min of inactivity
+  useEffect(() => {
+    if (!lastMessageAt || messages.length === 0) return;
+    const interval = setInterval(() => {
+      if (Date.now() - lastMessageAt >= IDLE_TIMEOUT_MS) {
+        const apiMessages = messages.map((m) => ({
+          role: m.role as "user" | "assistant",
+          content: m.content,
+        }));
+        invoke("summarize_session", { messages: apiMessages }).catch(() => {});
+        clearMessages();
+      }
+    }, 60_000);
+    return () => clearInterval(interval);
+  }, [lastMessageAt, messages, clearMessages]);
 
   const sendMessage = useCallback(async () => {
     const text = input.trim();

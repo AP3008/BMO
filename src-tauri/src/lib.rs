@@ -21,6 +21,10 @@ pub fn run() {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_background_color(Some(Color(0, 0, 0, 0)));
             }
+            // Initialize SQLite database and store connection in managed state
+            let conn = memory::db::init_db()
+                .expect("Failed to initialize database");
+            app.manage(std::sync::Mutex::new(conn));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -34,6 +38,7 @@ pub fn run() {
             commands::config::get_masked_api_key,
             commands::config::save_api_key_cmd,
             commands::llm::send_message,
+            commands::llm::summarize_session,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,7 +1,10 @@
 use crate::config::{BmoConfig, LlmProvider};
-use crate::prompts::{build_system_prompt, should_inject_context};
+use crate::memory;
+use crate::prompts::{build_system_prompt, should_inject_context, SUMMARIZE_SESSION_PROMPT};
 use futures_util::StreamExt;
+use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
+use std::sync::Mutex;
 use tauri::Emitter;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -21,6 +24,7 @@ fn trim_history(messages: &[ChatMessage], max: usize) -> Vec<ChatMessage> {
 #[tauri::command]
 pub async fn send_message(
     app: tauri::AppHandle,
+    db: tauri::State<'_, Mutex<Connection>>,
     messages: Vec<ChatMessage>,
 ) -> Result<String, String> {
     let config = BmoConfig::load()?;
@@ -28,12 +32,18 @@ pub async fn send_message(
 
     let trimmed = trim_history(&messages, 20);
 
+    // Load rolling memory summary from DB
+    let memory_summary = {
+        let conn = db.lock().map_err(|e| format!("DB lock error: {}", e))?;
+        memory::db::get_summary(&conn)
+    };
+
     let last_user_msg = trimmed
         .last()
         .map(|m| m.content.as_str())
         .unwrap_or("");
     let context_flags = should_inject_context(last_user_msg);
-    let (base_prompt, dynamic_context) = build_system_prompt(&config, &context_flags);
+    let (base_prompt, dynamic_context) = build_system_prompt(&config, &context_flags, memory_summary.as_deref());
 
     // Resolve effective model — use stored value or fall back to provider default
     let provider_str = match config.llm_provider {
@@ -250,4 +260,123 @@ async fn stream_openai(
     }
 
     Ok(full_response)
+}
+
+// ── Session summarization ──────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn summarize_session(
+    db: tauri::State<'_, Mutex<Connection>>,
+    messages: Vec<ChatMessage>,
+) -> Result<(), String> {
+    if messages.is_empty() {
+        return Ok(());
+    }
+
+    let config = BmoConfig::load()?;
+    let api_key = BmoConfig::load_api_key(&config.llm_provider)?;
+
+    // Load previous summary
+    let previous_summary = {
+        let conn = db.lock().map_err(|e| format!("DB lock error: {}", e))?;
+        memory::db::get_summary(&conn)
+    };
+
+    // Build the summarization prompt
+    let mut system = SUMMARIZE_SESSION_PROMPT.to_string();
+    if let Some(ref prev) = previous_summary {
+        system.push_str("\n\n--- PREVIOUS SUMMARY ---\n");
+        system.push_str(prev);
+    }
+
+    // Format conversation as user content
+    let conversation: String = messages
+        .iter()
+        .map(|m| format!("{}: {}", m.role, m.content))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // Resolve model
+    let provider_str = match config.llm_provider {
+        LlmProvider::Anthropic => "anthropic",
+        LlmProvider::OpenAI => "openai",
+        LlmProvider::None => return Err("No LLM provider configured.".into()),
+    };
+    let effective_model = if config.llm_model.is_empty() {
+        crate::commands::config::default_model_for_provider(provider_str).to_string()
+    } else {
+        config.llm_model.clone()
+    };
+
+    let client = reqwest::Client::new();
+
+    let summary = match config.llm_provider {
+        LlmProvider::Anthropic => {
+            let body = serde_json::json!({
+                "model": effective_model,
+                "max_tokens": 1024,
+                "system": system,
+                "messages": [{ "role": "user", "content": conversation }],
+            });
+            let resp = client
+                .post("https://api.anthropic.com/v1/messages")
+                .header("x-api-key", &api_key)
+                .header("anthropic-version", "2023-06-01")
+                .header("content-type", "application/json")
+                .json(&body)
+                .send()
+                .await
+                .map_err(|e| format!("Summarize request failed: {}", e))?;
+
+            if !resp.status().is_success() {
+                let body_text = resp.text().await.unwrap_or_default();
+                return Err(format!("Summarize API error: {}", body_text));
+            }
+
+            let parsed: serde_json::Value = resp.json().await
+                .map_err(|e| format!("Could not parse response: {}", e))?;
+            parsed["content"][0]["text"]
+                .as_str()
+                .unwrap_or("")
+                .to_string()
+        }
+        LlmProvider::OpenAI => {
+            let body = serde_json::json!({
+                "model": effective_model,
+                "max_tokens": 1024,
+                "messages": [
+                    { "role": "system", "content": system },
+                    { "role": "user", "content": conversation },
+                ],
+            });
+            let resp = client
+                .post("https://api.openai.com/v1/chat/completions")
+                .header("Authorization", format!("Bearer {}", api_key))
+                .header("Content-Type", "application/json")
+                .json(&body)
+                .send()
+                .await
+                .map_err(|e| format!("Summarize request failed: {}", e))?;
+
+            if !resp.status().is_success() {
+                let body_text = resp.text().await.unwrap_or_default();
+                return Err(format!("Summarize API error: {}", body_text));
+            }
+
+            let parsed: serde_json::Value = resp.json().await
+                .map_err(|e| format!("Could not parse response: {}", e))?;
+            parsed["choices"][0]["message"]["content"]
+                .as_str()
+                .unwrap_or("")
+                .to_string()
+        }
+        LlmProvider::None => return Err("No LLM provider configured.".into()),
+    };
+
+    if !summary.is_empty() {
+        let conn = db.lock().map_err(|e| format!("DB lock error: {}", e))?;
+        memory::db::save_summary(&conn, &summary)?;
+    }
+
+    Ok(())
 }
