@@ -52,6 +52,8 @@ pub struct BmoConfig {
     pub display_name: String,
     pub screen_side: ScreenSide,
     pub llm_provider: LlmProvider,
+    #[serde(default)]
+    pub llm_model: String,
     pub always_on_top: bool,
     pub launch_at_login: bool,
     pub notes: NotesConfig,
@@ -63,6 +65,7 @@ impl Default for BmoConfig {
             display_name: String::new(),
             screen_side: ScreenSide::Right,
             llm_provider: LlmProvider::None,
+            llm_model: String::new(),
             always_on_top: false,
             launch_at_login: false,
             notes: NotesConfig::default(),

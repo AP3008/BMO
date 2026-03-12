@@ -35,12 +35,24 @@ pub async fn send_message(
     let context_flags = should_inject_context(last_user_msg);
     let (base_prompt, dynamic_context) = build_system_prompt(&config, &context_flags);
 
+    // Resolve effective model — use stored value or fall back to provider default
+    let provider_str = match config.llm_provider {
+        LlmProvider::Anthropic => "anthropic",
+        LlmProvider::OpenAI => "openai",
+        LlmProvider::None => "",
+    };
+    let effective_model = if config.llm_model.is_empty() {
+        crate::commands::config::default_model_for_provider(provider_str).to_string()
+    } else {
+        config.llm_model.clone()
+    };
+
     match config.llm_provider {
         LlmProvider::Anthropic => {
-            stream_anthropic(&app, &api_key, &base_prompt, &dynamic_context, &trimmed).await
+            stream_anthropic(&app, &api_key, &base_prompt, &dynamic_context, &trimmed, &effective_model).await
         }
         LlmProvider::OpenAI => {
-            stream_openai(&app, &api_key, &base_prompt, &dynamic_context, &trimmed).await
+            stream_openai(&app, &api_key, &base_prompt, &dynamic_context, &trimmed, &effective_model).await
         }
         LlmProvider::None => Err("No LLM provider configured. Run `bmo --settings`.".into()),
     }
@@ -54,6 +66,7 @@ async fn stream_anthropic(
     base_prompt: &str,
     dynamic_context: &str,
     messages: &[ChatMessage],
+    model: &str,
 ) -> Result<String, String> {
     let client = reqwest::Client::new();
 
@@ -70,7 +83,7 @@ async fn stream_anthropic(
         .collect();
 
     let body = serde_json::json!({
-        "model": "claude-sonnet-4-20250514",
+        "model": model,
         "max_tokens": 1024,
         "stream": true,
         "system": system_prompt,
@@ -155,6 +168,7 @@ async fn stream_openai(
     base_prompt: &str,
     dynamic_context: &str,
     messages: &[ChatMessage],
+    model: &str,
 ) -> Result<String, String> {
     let client = reqwest::Client::new();
 
@@ -173,7 +187,7 @@ async fn stream_openai(
     }
 
     let body = serde_json::json!({
-        "model": "gpt-4o-mini",
+        "model": model,
         "max_tokens": 1024,
         "stream": true,
         "messages": api_messages,

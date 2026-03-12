@@ -46,10 +46,16 @@ export interface NotesConfig {
   obsidian_vault_path: string | null;
 }
 
+export interface ModelInfo {
+  id: string;
+  label: string;
+}
+
 export interface BmoSettings {
   display_name: string;
   screen_side: ScreenSide;
   llm_provider: LlmProvider;
+  llm_model: string;
   always_on_top: boolean;
   launch_at_login: boolean;
   notes: NotesConfig;
@@ -103,6 +109,10 @@ interface BmoStore {
   // Provider switching
   availableProviders: LlmProvider[];
   setAvailableProviders: (p: LlmProvider[]) => void;
+
+  // Model switching
+  availableModels: ModelInfo[];
+  setAvailableModels: (m: ModelInfo[]) => void;
 }
 
 // ── Store implementation ─────────────────────────────────────────────────────
@@ -155,4 +165,8 @@ export const useBmoStore = create<BmoStore>((set) => ({
   // Provider switching
   availableProviders: [],
   setAvailableProviders: (p) => set({ availableProviders: p }),
+
+  // Model switching
+  availableModels: [],
+  setAvailableModels: (m) => set({ availableModels: m }),
 }));

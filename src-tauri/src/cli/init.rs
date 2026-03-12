@@ -316,6 +316,7 @@ pub fn run(prefill: Option<&BmoConfig>) {
         display_name,
         screen_side,
         llm_provider,
+        llm_model: String::new(),
         always_on_top,
         launch_at_login,
         notes: NotesConfig {

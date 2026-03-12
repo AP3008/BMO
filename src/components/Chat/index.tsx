@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback, type KeyboardEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useBmoStore, type LlmProvider, type BmoSettings } from "../../store";
+import { useBmoStore, type LlmProvider, type BmoSettings, type ModelInfo } from "../../store";
 
 interface ApiMessage {
   role: "user" | "assistant";
@@ -26,12 +26,15 @@ export function Chat() {
   const setSettings = useBmoStore((s) => s.setSettings);
   const availableProviders = useBmoStore((s) => s.availableProviders);
   const setAvailableProviders = useBmoStore((s) => s.setAvailableProviders);
+  const availableModels = useBmoStore((s) => s.availableModels);
+  const setAvailableModels = useBmoStore((s) => s.setAvailableModels);
 
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const currentProvider = settings?.llm_provider ?? "none";
+  const currentModel = settings?.llm_model || availableModels[0]?.id || "";
 
   // Load available providers on mount
   useEffect(() => {
@@ -39,6 +42,14 @@ export function Chat() {
       setAvailableProviders(providers as LlmProvider[]);
     }).catch(() => {});
   }, [setAvailableProviders]);
+
+  // Load available models when provider changes
+  useEffect(() => {
+    if (currentProvider === "none") return;
+    invoke<ModelInfo[]>("get_models_for_provider", { provider: currentProvider })
+      .then(setAvailableModels)
+      .catch(() => {});
+  }, [currentProvider, setAvailableModels]);
 
   // Auto-scroll on new messages or streaming content
   useEffect(() => {
@@ -83,6 +94,21 @@ export function Chat() {
       });
     }
   }, [currentProvider, isLoading, setSettings, addMessage]);
+
+  const handleSwitchModel = useCallback(async (model: string) => {
+    if (model === currentModel || isLoading) return;
+    try {
+      const updated = await invoke<BmoSettings>("switch_model", { model });
+      setSettings(updated);
+    } catch (err) {
+      addMessage({
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: `Could not switch model: ${err}`,
+        createdAt: new Date(),
+      });
+    }
+  }, [currentModel, isLoading, setSettings, addMessage]);
 
   const sendMessage = useCallback(async () => {
     const text = input.trim();
@@ -220,6 +246,37 @@ export function Chat() {
           </div>
         )}
       </div>
+
+      {/* Model selector */}
+      {availableModels.length > 1 && currentProvider !== "none" && (
+        <div
+          className="shrink-0 flex items-center justify-center gap-1 px-3 py-1"
+          style={{ borderTop: "1px solid rgba(4,120,119,0.2)" }}
+        >
+          {availableModels.map((m) => (
+            <button
+              key={m.id}
+              onClick={() => handleSwitchModel(m.id)}
+              disabled={isLoading}
+              className="rounded px-2 py-0.5 text-[10px] font-medium transition-all"
+              style={{
+                backgroundColor:
+                  m.id === currentModel
+                    ? "var(--bmo-teal-dark)"
+                    : "rgba(255,255,255,0.1)",
+                color:
+                  m.id === currentModel
+                    ? "#e0fff0"
+                    : "var(--bmo-teal-dark)",
+                opacity: isLoading ? 0.5 : 1,
+                cursor: isLoading ? "default" : "pointer",
+              }}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Provider toggle (only when multiple providers available) */}
       {showToggle && (

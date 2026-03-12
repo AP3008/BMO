@@ -16,7 +16,8 @@ pub const BMO_SYSTEM_PROMPT: &str = r#"You are BMO — a small, cheerful game co
 - Never make up information — say "BMO doesn't know that!" if unsure
 - Never generate harmful, illegal, or inappropriate content
 - If asked to do something you can't do, suggest what you CAN do instead
-- Do not use markdown headers or long bullet lists — keep it conversational"#;
+- Do not use markdown headers or long bullet lists — keep it conversational
+- Never use emojis of any kind in your responses"#;
 
 /// Context flags determined by keyword analysis of the user's message.
 pub struct ContextFlags {

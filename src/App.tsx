@@ -17,6 +17,7 @@ function App() {
           display_name: "",
           screen_side: "right",
           llm_provider: "none",
+          llm_model: "",
           always_on_top: false,
           launch_at_login: false,
           notes: { mode: "local", obsidian_vault_path: null },
