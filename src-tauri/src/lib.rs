@@ -30,6 +30,8 @@ pub fn run() {
             commands::config::test_api_key,
             commands::config::get_models_for_provider,
             commands::config::switch_model,
+            commands::config::save_config,
+            commands::config::save_api_key_cmd,
             commands::llm::send_message,
         ])
         .run(tauri::generate_context!())

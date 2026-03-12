@@ -1,5 +1,5 @@
-use crate::config::{BmoConfig, LlmProvider};
-use serde::Serialize;
+use crate::config::{BmoConfig, LlmProvider, NotesConfig, NotesMode, ScreenSide};
+use serde::{Deserialize, Serialize};
 
 // ── Model registry ──────────────────────────────────────────────────────────
 
@@ -107,4 +107,55 @@ pub fn switch_model(model: String) -> Result<BmoConfig, String> {
     config.llm_model = model;
     config.save()?;
     Ok(config)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveConfigPayload {
+    pub display_name: String,
+    pub screen_side: String,
+    pub llm_provider: String,
+    pub llm_model: String,
+    pub always_on_top: bool,
+    pub launch_at_login: bool,
+    pub notes_mode: String,
+    pub obsidian_vault_path: Option<String>,
+}
+
+#[tauri::command]
+pub fn save_config(payload: SaveConfigPayload) -> Result<BmoConfig, String> {
+    let config = BmoConfig {
+        display_name: payload.display_name,
+        screen_side: match payload.screen_side.as_str() {
+            "left" => ScreenSide::Left,
+            _ => ScreenSide::Right,
+        },
+        llm_provider: match payload.llm_provider.as_str() {
+            "anthropic" => LlmProvider::Anthropic,
+            "openai" => LlmProvider::OpenAI,
+            _ => LlmProvider::None,
+        },
+        llm_model: payload.llm_model,
+        always_on_top: payload.always_on_top,
+        launch_at_login: payload.launch_at_login,
+        notes: NotesConfig {
+            mode: match payload.notes_mode.as_str() {
+                "obsidian" => NotesMode::Obsidian,
+                _ => NotesMode::Local,
+            },
+            obsidian_vault_path: payload.obsidian_vault_path,
+        },
+    };
+    config.save()?;
+    Ok(config)
+}
+
+#[tauri::command]
+pub fn save_api_key_cmd(provider: String, key: String) -> Result<(), String> {
+    let provider_enum = match provider.as_str() {
+        "anthropic" => LlmProvider::Anthropic,
+        "openai" => LlmProvider::OpenAI,
+        _ => return Err("Unknown provider".into()),
+    };
+    BmoConfig::save_api_key(&provider_enum, &key)
 }
