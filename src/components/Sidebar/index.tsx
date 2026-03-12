@@ -4,6 +4,7 @@ import { getCurrentWindow, primaryMonitor } from "@tauri-apps/api/window";
 import { LogicalSize, LogicalPosition } from "@tauri-apps/api/dpi";
 import { useBmoStore } from "../../store";
 import { BmoFace } from "../BmoFace";
+import { Chat } from "../Chat";
 import { StatusBar } from "../StatusBar";
 
 const SIDEBAR_W = 260;
@@ -99,15 +100,10 @@ export function Sidebar() {
 
           {/* Chat slot */}
           <div
-            className="flex-1 flex items-center justify-center overflow-hidden"
+            className="flex-1 flex flex-col overflow-hidden"
             style={{ borderTop: "1px solid rgba(4,120,119,0.2)" }}
           >
-            <p
-              className="text-xs text-center px-4 opacity-40"
-              style={{ color: "var(--bmo-teal-dark)" }}
-            >
-              Chat coming in Feature 05
-            </p>
+            <Chat />
           </div>
         </main>
 

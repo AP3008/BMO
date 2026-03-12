@@ -38,7 +38,7 @@ export interface ConfirmRequest {
 // ── Settings types ───────────────────────────────────────────────────────────
 
 export type ScreenSide = "left" | "right";
-export type LlmProvider = "openai" | "anthropic" | "ollama" | "none";
+export type LlmProvider = "openai" | "anthropic" | "none";
 export type NotesMode = "obsidian" | "local";
 
 export interface NotesConfig {
@@ -61,8 +61,11 @@ interface BmoStore {
   // Chat
   messages: Message[];
   isLoading: boolean;
+  streamingContent: string;
   addMessage: (msg: Message) => void;
   setIsLoading: (v: boolean) => void;
+  appendStreamingContent: (delta: string) => void;
+  clearStreamingContent: () => void;
 
   // BMO face
   expression: BmoExpression;
@@ -104,8 +107,12 @@ export const useBmoStore = create<BmoStore>((set) => ({
   // Chat
   messages: [],
   isLoading: false,
+  streamingContent: "",
   addMessage: (msg) => set((s) => ({ messages: [...s.messages, msg] })),
   setIsLoading: (v) => set({ isLoading: v }),
+  appendStreamingContent: (delta) =>
+    set((s) => ({ streamingContent: s.streamingContent + delta })),
+  clearStreamingContent: () => set({ streamingContent: "" }),
 
   // BMO face
   expression: "idle",
