@@ -118,6 +118,7 @@ pub struct SaveConfigPayload {
     pub llm_model: String,
     pub always_on_top: bool,
     pub launch_at_login: bool,
+    pub personality_enabled: bool,
     pub notes_mode: String,
     pub obsidian_vault_path: Option<String>,
 }
@@ -138,6 +139,7 @@ pub fn save_config(payload: SaveConfigPayload) -> Result<BmoConfig, String> {
         llm_model: payload.llm_model,
         always_on_top: payload.always_on_top,
         launch_at_login: payload.launch_at_login,
+        personality_enabled: payload.personality_enabled,
         notes: NotesConfig {
             mode: match payload.notes_mode.as_str() {
                 "obsidian" => NotesMode::Obsidian,

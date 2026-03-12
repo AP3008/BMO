@@ -127,6 +127,7 @@ interface SettingsDraft {
   launchAtLogin: boolean;
   notesMode: NotesMode;
   obsidianVaultPath: string;
+  personalityEnabled: boolean;
   apiKeyDraft: string;
   apiKeyMasked: string;
   apiKeyEditing: boolean;
@@ -140,6 +141,7 @@ function initDraft(settings: BmoSettings | null): SettingsDraft {
     llmModel: settings?.llm_model ?? "",
     alwaysOnTop: settings?.always_on_top ?? false,
     launchAtLogin: settings?.launch_at_login ?? false,
+    personalityEnabled: settings?.personality_enabled ?? true,
     notesMode: (settings?.notes?.mode as NotesMode) ?? "local",
     obsidianVaultPath: settings?.notes?.obsidian_vault_path ?? "",
     apiKeyDraft: "",
@@ -202,6 +204,7 @@ export function SettingsPanel() {
           llmModel: draft.llmModel,
           alwaysOnTop: draft.alwaysOnTop,
           launchAtLogin: draft.launchAtLogin,
+          personalityEnabled: draft.personalityEnabled,
           notesMode: draft.notesMode,
           obsidianVaultPath: draft.obsidianVaultPath || null,
         },
@@ -269,6 +272,11 @@ export function SettingsPanel() {
               }}
             />
           </SettingsRow>
+          <SwitchRow
+            label="BMO Personality"
+            checked={draft.personalityEnabled}
+            onChange={(v) => update("personalityEnabled", v)}
+          />
         </SettingsSection>
 
         {/* Display */}

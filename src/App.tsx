@@ -20,6 +20,7 @@ function App() {
           llm_model: "",
           always_on_top: false,
           launch_at_login: false,
+          personality_enabled: true,
           notes: { mode: "local", obsidian_vault_path: null },
         });
       });

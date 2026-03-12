@@ -29,6 +29,10 @@ pub enum NotesMode {
     Local,
 }
 
+fn default_true() -> bool {
+    true
+}
+
 // ── Config structs ───────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,6 +60,8 @@ pub struct BmoConfig {
     pub llm_model: String,
     pub always_on_top: bool,
     pub launch_at_login: bool,
+    #[serde(default = "default_true")]
+    pub personality_enabled: bool,
     pub notes: NotesConfig,
 }
 
@@ -68,6 +74,7 @@ impl Default for BmoConfig {
             llm_model: String::new(),
             always_on_top: false,
             launch_at_login: false,
+            personality_enabled: true,
             notes: NotesConfig::default(),
         }
     }

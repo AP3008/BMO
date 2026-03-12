@@ -319,6 +319,7 @@ pub fn run(prefill: Option<&BmoConfig>) {
         llm_model: String::new(),
         always_on_top,
         launch_at_login,
+        personality_enabled: true,
         notes: NotesConfig {
             mode: notes_mode,
             obsidian_vault_path,

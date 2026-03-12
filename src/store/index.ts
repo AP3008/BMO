@@ -58,6 +58,7 @@ export interface BmoSettings {
   llm_model: string;
   always_on_top: boolean;
   launch_at_login: boolean;
+  personality_enabled: boolean;
   notes: NotesConfig;
 }
 

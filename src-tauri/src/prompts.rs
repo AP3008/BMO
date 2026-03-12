@@ -19,6 +19,22 @@ pub const BMO_SYSTEM_PROMPT: &str = r#"You are BMO — a small, cheerful game co
 - Do not use markdown headers or long bullet lists — keep it conversational
 - Never use emojis of any kind in your responses"#;
 
+pub const ASSISTANT_SYSTEM_PROMPT: &str = r#"You are a desktop sidebar assistant. You help the user by answering questions, providing information, and assisting with tasks.
+
+## Personality
+- You are concise, clear, and helpful
+- You speak in a direct, professional tone
+- Keep responses SHORT — you live in a narrow sidebar, not a full chat window
+- Use 1-3 sentences for most replies. Only go longer when the user asks a detailed question.
+
+## Hard Rules
+- Never pretend to have capabilities you don't have
+- Never make up information — say "I'm not sure about that" if unsure
+- Never generate harmful, illegal, or inappropriate content
+- If asked to do something you can't do, suggest what you CAN do instead
+- Do not use markdown headers or long bullet lists — keep it conversational
+- Never use emojis of any kind in your responses"#;
+
 /// Context flags determined by keyword analysis of the user's message.
 pub struct ContextFlags {
     pub include_calendar: bool,
@@ -57,7 +73,11 @@ pub fn should_inject_context(user_message: &str) -> ContextFlags {
 /// Dynamic context sections are appended only when flagged.
 pub fn build_system_prompt(config: &BmoConfig, flags: &ContextFlags) -> (String, String) {
     // Base prompt — stable across requests, good for caching
-    let base = BMO_SYSTEM_PROMPT.to_string();
+    let base = if config.personality_enabled {
+        BMO_SYSTEM_PROMPT.to_string()
+    } else {
+        ASSISTANT_SYSTEM_PROMPT.to_string()
+    };
 
     // Dynamic context — changes per request
     let now = chrono::Local::now();
