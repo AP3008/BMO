@@ -206,8 +206,11 @@ impl BmoConfig {
 
         for line in contents.lines() {
             let trimmed = line.trim();
-            if let Some(value) = trimmed.strip_prefix(var_name) {
-                if let Some(value) = value.strip_prefix('=') {
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                continue;
+            }
+            if let Some((name, value)) = trimmed.split_once('=') {
+                if name.trim() == var_name {
                     let key = value.trim().to_string();
                     if !key.is_empty() {
                         return Ok(key);

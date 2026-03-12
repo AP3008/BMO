@@ -99,6 +99,10 @@ interface BmoStore {
   settings: BmoSettings | null;
   settingsLoaded: boolean;
   setSettings: (s: BmoSettings) => void;
+
+  // Provider switching
+  availableProviders: LlmProvider[];
+  setAvailableProviders: (p: LlmProvider[]) => void;
 }
 
 // ── Store implementation ─────────────────────────────────────────────────────
@@ -147,4 +151,8 @@ export const useBmoStore = create<BmoStore>((set) => ({
   settings: null,
   settingsLoaded: false,
   setSettings: (s) => set({ settings: s, settingsLoaded: true }),
+
+  // Provider switching
+  availableProviders: [],
+  setAvailableProviders: (p) => set({ availableProviders: p }),
 }));

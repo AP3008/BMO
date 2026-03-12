@@ -91,7 +91,10 @@ async fn stream_anthropic(
         let status = resp.status();
         let body_text = resp.text().await.unwrap_or_default();
         return match status.as_u16() {
-            401 | 403 => Err("API key invalid or expired. Run `bmo --settings` to update it.".into()),
+            401 | 403 => Err(format!(
+                "API key invalid or expired (HTTP {}). Run `bmo --settings` to update it. Detail: {}",
+                status, body_text
+            )),
             _ => Err(format!("Anthropic API error (HTTP {}): {}", status, body_text)),
         };
     }
@@ -187,7 +190,10 @@ async fn stream_openai(
         let status = resp.status();
         let body_text = resp.text().await.unwrap_or_default();
         return match status.as_u16() {
-            401 | 403 => Err("API key invalid or expired. Run `bmo --settings` to update it.".into()),
+            401 | 403 => Err(format!(
+                "API key invalid or expired (HTTP {}). Run `bmo --settings` to update it. Detail: {}",
+                status, body_text
+            )),
             _ => Err(format!("OpenAI API error (HTTP {}): {}", status, body_text)),
         };
     }

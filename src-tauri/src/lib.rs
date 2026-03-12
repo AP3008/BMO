@@ -27,6 +27,7 @@ pub fn run() {
             commands::config::get_config,
             commands::config::switch_provider,
             commands::config::get_available_providers,
+            commands::config::test_api_key,
             commands::llm::send_message,
         ])
         .run(tauri::generate_context!())
