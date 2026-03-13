@@ -9,9 +9,10 @@ export type BmoExpression =
 
 export interface Message {
   id: string;
-  role: "user" | "assistant" | "system";
+  role: "user" | "assistant" | "system" | "tool-used";
   content: string;
   createdAt: Date;
+  toolName?: string;
 }
 
 export interface Timer {

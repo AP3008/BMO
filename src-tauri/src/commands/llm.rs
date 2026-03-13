@@ -14,12 +14,39 @@ pub struct ChatMessage {
     pub content: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+struct ToolUsedEvent {
+    name: String,
+    label: String,
+}
+
 /// Trim conversation history to the last `max` messages.
 fn trim_history(messages: &[ChatMessage], max: usize) -> Vec<ChatMessage> {
     if messages.len() <= max {
         return messages.to_vec();
     }
     messages[messages.len() - max..].to_vec()
+}
+
+/// Extract text content from an assistant message JSON value.
+/// Handles Anthropic's content array and OpenAI's content string.
+fn extract_text_from_assistant_msg(msg: &serde_json::Value) -> Option<String> {
+    // Anthropic: content is an array of blocks
+    if let Some(arr) = msg["content"].as_array() {
+        let texts: Vec<&str> = arr
+            .iter()
+            .filter(|b| b["type"].as_str() == Some("text"))
+            .filter_map(|b| b["text"].as_str())
+            .collect();
+        let joined = texts.join("");
+        if joined.is_empty() { None } else { Some(joined) }
+    }
+    // OpenAI: content is a string
+    else if let Some(s) = msg["content"].as_str() {
+        if s.is_empty() { None } else { Some(s.to_string()) }
+    } else {
+        None
+    }
 }
 
 /// Result of a single streaming call — either final text or tool calls to execute.
@@ -89,7 +116,7 @@ pub async fn send_message(
         }
     };
 
-    // Tool loop
+    // Tool loop with multi-bubble events
     for _round in 0..MAX_TOOL_ROUNDS {
         let result = match config.llm_provider {
             LlmProvider::Anthropic => {
@@ -104,16 +131,29 @@ pub async fn send_message(
         match result {
             StreamResult::Text(text) => {
                 let _ = app.emit("chat-stream-end", &text);
+                let _ = app.emit("chat-complete", ());
                 return Ok(text);
             }
             StreamResult::ToolCalls(assistant_msg, calls) => {
+                // If the assistant included text before tool calls, emit it as its own bubble
+                if let Some(text) = extract_text_from_assistant_msg(&assistant_msg) {
+                    let _ = app.emit("chat-stream-end", &text);
+                }
+                // Clear streaming content for the next round
+                let _ = app.emit("chat-stream-clear", ());
+
                 // Append the assistant message (with tool_use blocks) to conversation
                 api_messages.push(assistant_msg);
 
                 // Execute each tool and append results
                 for call in &calls {
                     let label = tools::tool_status_label(&call.name);
-                    let _ = app.emit("chat-tool-status", label);
+
+                    // Emit tool-used indicator bubble
+                    let _ = app.emit("chat-tool-used", ToolUsedEvent {
+                        name: call.name.clone(),
+                        label: label.to_string(),
+                    });
 
                     let tool_result = tools::execute_tool(&config, call);
 
@@ -143,6 +183,7 @@ pub async fn send_message(
         }
     }
 
+    let _ = app.emit("chat-complete", ());
     Err("Too many tool rounds".into())
 }
 

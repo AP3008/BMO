@@ -59,6 +59,20 @@ pub fn anthropic_tools() -> serde_json::Value {
                 "properties": {},
                 "required": []
             }
+        },
+        {
+            "name": "recall_memory",
+            "description": "Recall past day memories. Call with a date (DD-MM-YYYY) to read that day's memory, or without a date to list available dates.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "date": {
+                        "type": "string",
+                        "description": "Date in DD-MM-YYYY format. Omit to list available memory dates."
+                    }
+                },
+                "required": []
+            }
         }
     ])
 }
@@ -115,6 +129,23 @@ pub fn openai_tools() -> serde_json::Value {
                     "required": []
                 }
             }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "recall_memory",
+                "description": "Recall past day memories. Call with a date (DD-MM-YYYY) to read that day's memory, or without a date to list available dates.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "date": {
+                            "type": "string",
+                            "description": "Date in DD-MM-YYYY format. Omit to list available memory dates."
+                        }
+                    },
+                    "required": []
+                }
+            }
         }
     ])
 }
@@ -153,6 +184,29 @@ pub fn execute_tool(config: &BmoConfig, tool_call: &ToolCall) -> ToolResult {
                 Err(e) => (format!("Failed to list notes: {}", e), true),
             }
         }
+        "recall_memory" => {
+            let date = tool_call.arguments["date"].as_str().filter(|s| !s.is_empty());
+            match date {
+                Some(date_str) => {
+                    match memory::db::read_memory_archive(config, date_str) {
+                        Ok(content) => (content, false),
+                        Err(e) => (format!("Failed to read memory archive: {}", e), true),
+                    }
+                }
+                None => {
+                    match memory::db::list_memory_archives(config) {
+                        Ok(names) => {
+                            if names.is_empty() {
+                                ("No memory archives found.".to_string(), false)
+                            } else {
+                                (names.join("\n"), false)
+                            }
+                        }
+                        Err(e) => (format!("Failed to list memory archives: {}", e), true),
+                    }
+                }
+            }
+        }
         other => (format!("Unknown tool: {}", other), true),
     };
 
@@ -169,6 +223,7 @@ pub fn tool_status_label(name: &str) -> &str {
         "write_note" => "Writing a note...",
         "read_note" => "Reading a note...",
         "list_notes" => "Looking up notes...",
+        "recall_memory" => "Recalling memories...",
         _ => "Working...",
     }
 }

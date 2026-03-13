@@ -24,6 +24,7 @@ You have access to the following tools to manage the user's notes:
 - write_note: Save a new note with a topic and content. Use when the user asks you to write down, save, or note something.
 - read_note: Read the contents of a specific note file. Call list_notes first to find filenames.
 - list_notes: List all note filenames in the user's notes folder.
+- recall_memory: Recall past day memories. Call with a date (DD-MM-YYYY) to read that day, or without a date to list available dates.
 
 When the user asks about their notes, USE the tools — do not guess.
 When writing a note, confirm what you saved after the tool completes."#;
@@ -49,6 +50,7 @@ You have access to the following tools to manage the user's notes:
 - write_note: Save a new note with a topic and content. Use when the user asks you to write down, save, or note something.
 - read_note: Read the contents of a specific note file. Call list_notes first to find filenames.
 - list_notes: List all note filenames in the user's notes folder.
+- recall_memory: Recall past day memories. Call with a date (DD-MM-YYYY) to read that day, or without a date to list available dates.
 
 When the user asks about their notes, USE the tools — do not guess.
 When writing a note, confirm what you saved after the tool completes."#;
