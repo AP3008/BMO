@@ -9,9 +9,10 @@ export type BmoExpression =
 
 export interface Message {
   id: string;
-  role: "user" | "assistant" | "system";
+  role: "user" | "assistant" | "system" | "tool-used";
   content: string;
   createdAt: Date;
+  toolName?: string;
 }
 
 export interface Timer {
@@ -69,7 +70,9 @@ interface BmoStore {
   messages: Message[];
   isLoading: boolean;
   streamingContent: string;
+  lastMessageAt: number | null;
   addMessage: (msg: Message) => void;
+  clearMessages: () => void;
   setIsLoading: (v: boolean) => void;
   appendStreamingContent: (delta: string) => void;
   clearStreamingContent: () => void;
@@ -114,6 +117,10 @@ interface BmoStore {
   // Model switching
   availableModels: ModelInfo[];
   setAvailableModels: (m: ModelInfo[]) => void;
+
+  // Tool status
+  toolStatus: string | null;
+  setToolStatus: (s: string | null) => void;
 }
 
 // ── Store implementation ─────────────────────────────────────────────────────
@@ -123,7 +130,9 @@ export const useBmoStore = create<BmoStore>((set) => ({
   messages: [],
   isLoading: false,
   streamingContent: "",
-  addMessage: (msg) => set((s) => ({ messages: [...s.messages, msg] })),
+  lastMessageAt: null,
+  addMessage: (msg) => set((s) => ({ messages: [...s.messages, msg], lastMessageAt: Date.now() })),
+  clearMessages: () => set({ messages: [], lastMessageAt: null }),
   setIsLoading: (v) => set({ isLoading: v }),
   appendStreamingContent: (delta) =>
     set((s) => ({ streamingContent: s.streamingContent + delta })),
@@ -170,4 +179,8 @@ export const useBmoStore = create<BmoStore>((set) => ({
   // Model switching
   availableModels: [],
   setAvailableModels: (m) => set({ availableModels: m }),
+
+  // Tool status
+  toolStatus: null,
+  setToolStatus: (s) => set({ toolStatus: s }),
 }));

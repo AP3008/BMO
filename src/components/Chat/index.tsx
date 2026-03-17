@@ -8,15 +8,26 @@ interface ApiMessage {
   content: string;
 }
 
+interface ToolUsedPayload {
+  name: string;
+  label: string;
+}
+
+const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+
 export function Chat() {
   const messages = useBmoStore((s) => s.messages);
   const isLoading = useBmoStore((s) => s.isLoading);
   const streamingContent = useBmoStore((s) => s.streamingContent);
   const addMessage = useBmoStore((s) => s.addMessage);
+  const clearMessages = useBmoStore((s) => s.clearMessages);
+  const lastMessageAt = useBmoStore((s) => s.lastMessageAt);
   const setIsLoading = useBmoStore((s) => s.setIsLoading);
   const setExpression = useBmoStore((s) => s.setExpression);
   const appendStreamingContent = useBmoStore((s) => s.appendStreamingContent);
   const clearStreamingContent = useBmoStore((s) => s.clearStreamingContent);
+  const toolStatus = useBmoStore((s) => s.toolStatus);
+  const setToolStatus = useBmoStore((s) => s.setToolStatus);
 
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -29,27 +40,85 @@ export function Chat() {
     }
   }, [messages, streamingContent]);
 
-  // Listen for streaming events
+  // Listen for streaming events (6 listeners)
   useEffect(() => {
+    // 1. chat-stream — append to streamingContent
     const unlisten1 = listen<string>("chat-stream", (event) => {
+      setToolStatus(null);
       appendStreamingContent(event.payload);
     });
+
+    // 2. chat-stream-end — create assistant bubble (do NOT set isLoading=false)
     const unlisten2 = listen<string>("chat-stream-end", (event) => {
       clearStreamingContent();
+      setToolStatus(null);
+      if (event.payload.trim()) {
+        addMessage({
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: event.payload,
+          createdAt: new Date(),
+        });
+      }
+    });
+
+    // 3. chat-tool-used — create tool indicator bubble
+    const unlisten3 = listen<ToolUsedPayload>("chat-tool-used", (event) => {
+      setToolStatus(null);
       addMessage({
         id: crypto.randomUUID(),
-        role: "assistant",
-        content: event.payload,
+        role: "tool-used",
+        content: event.payload.label,
         createdAt: new Date(),
+        toolName: event.payload.name,
       });
+    });
+
+    // 4. chat-tool-status — transient "Working..." label
+    const unlisten4 = listen<string>("chat-tool-status", (event) => {
+      setToolStatus(event.payload);
+    });
+
+    // 5. chat-complete — done, set isLoading=false
+    const unlisten5 = listen("chat-complete", () => {
       setIsLoading(false);
       setExpression("idle");
+      setToolStatus(null);
+      clearStreamingContent();
     });
+
+    // 6. chat-stream-clear — reset streamingContent between rounds
+    const unlisten6 = listen("chat-stream-clear", () => {
+      clearStreamingContent();
+    });
+
     return () => {
       unlisten1.then((f) => f());
       unlisten2.then((f) => f());
+      unlisten3.then((f) => f());
+      unlisten4.then((f) => f());
+      unlisten5.then((f) => f());
+      unlisten6.then((f) => f());
     };
-  }, [addMessage, appendStreamingContent, clearStreamingContent, setIsLoading, setExpression]);
+  }, [addMessage, appendStreamingContent, clearStreamingContent, setIsLoading, setExpression, setToolStatus]);
+
+  // Idle timer — summarize session after 30 min of inactivity
+  useEffect(() => {
+    if (!lastMessageAt || messages.length === 0) return;
+    const interval = setInterval(() => {
+      if (Date.now() - lastMessageAt >= IDLE_TIMEOUT_MS) {
+        const apiMessages = messages
+          .filter((m) => m.role === "user" || m.role === "assistant")
+          .map((m) => ({
+            role: m.role as "user" | "assistant",
+            content: m.content,
+          }));
+        invoke("summarize_session", { messages: apiMessages }).catch(() => {});
+        clearMessages();
+      }
+    }, 60_000);
+    return () => clearInterval(interval);
+  }, [lastMessageAt, messages, clearMessages]);
 
   const sendMessage = useCallback(async () => {
     const text = input.trim();
@@ -66,15 +135,18 @@ export function Chat() {
     setIsLoading(true);
     setExpression("thinking");
     clearStreamingContent();
+    setToolStatus(null);
 
     // Reset textarea height
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
 
-    // Build API message array (role + content only)
+    // Build API message array — filter out tool-used messages
     const apiMessages: ApiMessage[] = [
-      ...messages.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
+      ...messages
+        .filter((m) => m.role === "user" || m.role === "assistant")
+        .map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
       { role: "user", content: text },
     ];
 
@@ -126,26 +198,51 @@ export function Chat() {
           </p>
         )}
 
-        {messages.map((msg) => (
-          <div
-            key={msg.id}
-            className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-          >
+        {messages.map((msg) => {
+          // Tool-used indicator bubble
+          if (msg.role === "tool-used") {
+            return (
+              <div key={msg.id} className="flex justify-start">
+                <div
+                  className="rounded-lg px-2.5 py-1 italic break-words"
+                  style={{
+                    maxWidth: "85%",
+                    fontSize: "10px",
+                    lineHeight: "1.4",
+                    backgroundColor: "transparent",
+                    color: "var(--bmo-teal-dark)",
+                    opacity: 0.55,
+                    borderLeft: "2px solid var(--bmo-teal-dark)",
+                  }}
+                >
+                  {msg.content}
+                </div>
+              </div>
+            );
+          }
+
+          // Regular user/assistant bubble
+          return (
             <div
-              className="rounded-xl px-3 py-1.5 text-xs leading-relaxed break-words"
-              style={{
-                maxWidth: "85%",
-                backgroundColor:
-                  msg.role === "user"
-                    ? "var(--bmo-teal-dark)"
-                    : "rgba(255,255,255,0.15)",
-                color: msg.role === "user" ? "#e0fff0" : "var(--bmo-teal-dark)",
-              }}
+              key={msg.id}
+              className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
             >
-              {msg.content}
+              <div
+                className="rounded-xl px-3 py-1.5 text-xs leading-relaxed break-words"
+                style={{
+                  maxWidth: "85%",
+                  backgroundColor:
+                    msg.role === "user"
+                      ? "var(--bmo-teal-dark)"
+                      : "rgba(255,255,255,0.15)",
+                  color: msg.role === "user" ? "#e0fff0" : "var(--bmo-teal-dark)",
+                }}
+              >
+                {msg.content}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
 
         {/* Streaming message */}
         {isLoading && streamingContent && (
@@ -166,8 +263,24 @@ export function Chat() {
           </div>
         )}
 
+        {/* Tool status indicator */}
+        {isLoading && !streamingContent && toolStatus && (
+          <div className="flex justify-start">
+            <div
+              className="rounded-xl px-3 py-1.5 text-xs italic"
+              style={{
+                backgroundColor: "rgba(255,255,255,0.15)",
+                color: "var(--bmo-teal-dark)",
+                opacity: 0.7,
+              }}
+            >
+              {toolStatus}
+            </div>
+          </div>
+        )}
+
         {/* Thinking indicator (before any content streams) */}
-        {isLoading && !streamingContent && (
+        {isLoading && !streamingContent && !toolStatus && (
           <div className="flex justify-start">
             <div
               className="rounded-xl px-3 py-1.5 text-xs"

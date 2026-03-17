@@ -5,6 +5,7 @@ pub mod memory;
 pub mod prompts;
 pub mod scheduler;
 pub mod google;
+pub mod tools;
 
 pub fn config_exists() -> bool {
     let home = std::env::var("HOME").unwrap_or_default();
@@ -34,6 +35,10 @@ pub fn run() {
             commands::config::get_masked_api_key,
             commands::config::save_api_key_cmd,
             commands::llm::send_message,
+            commands::llm::summarize_session,
+            commands::notes::write_note,
+            commands::notes::list_notes,
+            commands::notes::read_note,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

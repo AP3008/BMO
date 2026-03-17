@@ -17,7 +17,17 @@ pub const BMO_SYSTEM_PROMPT: &str = r#"You are BMO — a small, cheerful game co
 - Never generate harmful, illegal, or inappropriate content
 - If asked to do something you can't do, suggest what you CAN do instead
 - Do not use markdown headers or long bullet lists — keep it conversational
-- Never use emojis of any kind in your responses"#;
+- Never use emojis of any kind in your responses
+
+## Tools
+You have access to the following tools to manage the user's notes:
+- write_note: Save a new note with a topic and content. Use when the user asks you to write down, save, or note something.
+- read_note: Read the contents of a specific note file. Call list_notes first to find filenames.
+- list_notes: List all note filenames in the user's notes folder.
+- recall_memory: Recall past day memories. Call with a date (DD-MM-YYYY) to read that day, or without a date to list available dates.
+
+When the user asks about their notes, USE the tools — do not guess.
+When writing a note, confirm what you saved after the tool completes."#;
 
 pub const ASSISTANT_SYSTEM_PROMPT: &str = r#"You are a desktop sidebar assistant. You help the user by answering questions, providing information, and assisting with tasks.
 
@@ -33,7 +43,31 @@ pub const ASSISTANT_SYSTEM_PROMPT: &str = r#"You are a desktop sidebar assistant
 - Never generate harmful, illegal, or inappropriate content
 - If asked to do something you can't do, suggest what you CAN do instead
 - Do not use markdown headers or long bullet lists — keep it conversational
-- Never use emojis of any kind in your responses"#;
+- Never use emojis of any kind in your responses
+
+## Tools
+You have access to the following tools to manage the user's notes:
+- write_note: Save a new note with a topic and content. Use when the user asks you to write down, save, or note something.
+- read_note: Read the contents of a specific note file. Call list_notes first to find filenames.
+- list_notes: List all note filenames in the user's notes folder.
+- recall_memory: Recall past day memories. Call with a date (DD-MM-YYYY) to read that day, or without a date to list available dates.
+
+When the user asks about their notes, USE the tools — do not guess.
+When writing a note, confirm what you saved after the tool completes."#;
+
+pub const SUMMARIZE_SESSION_PROMPT: &str = r#"You are summarizing a conversation session for long-term memory. Extract and organize:
+
+1. User Facts: Personal details, preferences, projects, tools they use
+2. Topics Discussed: What was talked about, questions asked, problems solved
+3. Action Items: Things the user said they need to do or follow up on
+
+You will also receive a PREVIOUS SUMMARY (if one exists). Your job is to produce a single UPDATED SUMMARY that:
+- Retains all important facts from the previous summary
+- Adds new information from this session
+- Removes anything that was corrected or is no longer relevant
+- Stays concise — aim for 200-400 words max
+
+Output ONLY the summary text, no headers or preamble."#;
 
 /// Context flags determined by keyword analysis of the user's message.
 pub struct ContextFlags {
@@ -71,7 +105,8 @@ pub fn should_inject_context(user_message: &str) -> ContextFlags {
 
 /// Build the full system prompt. The base personality is always included (cacheable).
 /// Dynamic context sections are appended only when flagged.
-pub fn build_system_prompt(config: &BmoConfig, flags: &ContextFlags) -> (String, String) {
+/// `memory` is the rolling session summary — always injected if present.
+pub fn build_system_prompt(config: &BmoConfig, flags: &ContextFlags, memory: Option<&str>) -> (String, String) {
     // Base prompt — stable across requests, good for caching
     let base = if config.personality_enabled {
         BMO_SYSTEM_PROMPT.to_string()
@@ -87,12 +122,14 @@ pub fn build_system_prompt(config: &BmoConfig, flags: &ContextFlags) -> (String,
         config.display_name
     );
 
-    if flags.include_calendar {
-        dynamic.push_str("\n- Calendar: No calendar connected yet.");
+    // Always inject memory if a summary exists
+    if let Some(summary) = memory {
+        dynamic.push_str("\n\n## What you remember about the user\n");
+        dynamic.push_str(summary);
     }
 
-    if flags.include_memory {
-        dynamic.push_str("\n- Memory: No memories stored yet.");
+    if flags.include_calendar {
+        dynamic.push_str("\n- Calendar: No calendar connected yet.");
     }
 
     if flags.include_timer {
