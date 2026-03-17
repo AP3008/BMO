@@ -172,39 +172,35 @@ pub fn execute_tool(config: &BmoConfig, tool_call: &ToolCall) -> ToolResult {
                 Err(e) => (format!("Failed to read note: {}", e), true),
             }
         }
-        "list_notes" => {
-            match memory::db::list_notes(config) {
-                Ok(names) => {
-                    if names.is_empty() {
-                        ("No notes found.".to_string(), false)
-                    } else {
-                        (names.join("\n"), false)
-                    }
+        "list_notes" => match memory::db::list_notes(config) {
+            Ok(names) => {
+                if names.is_empty() {
+                    ("No notes found.".to_string(), false)
+                } else {
+                    (names.join("\n"), false)
                 }
-                Err(e) => (format!("Failed to list notes: {}", e), true),
             }
-        }
+            Err(e) => (format!("Failed to list notes: {}", e), true),
+        },
         "recall_memory" => {
-            let date = tool_call.arguments["date"].as_str().filter(|s| !s.is_empty());
+            let date = tool_call.arguments["date"]
+                .as_str()
+                .filter(|s| !s.is_empty());
             match date {
-                Some(date_str) => {
-                    match memory::db::read_memory_archive(config, date_str) {
-                        Ok(content) => (content, false),
-                        Err(e) => (format!("Failed to read memory archive: {}", e), true),
-                    }
-                }
-                None => {
-                    match memory::db::list_memory_archives(config) {
-                        Ok(names) => {
-                            if names.is_empty() {
-                                ("No memory archives found.".to_string(), false)
-                            } else {
-                                (names.join("\n"), false)
-                            }
+                Some(date_str) => match memory::db::read_memory_archive(config, date_str) {
+                    Ok(content) => (content, false),
+                    Err(e) => (format!("Failed to read memory archive: {}", e), true),
+                },
+                None => match memory::db::list_memory_archives(config) {
+                    Ok(names) => {
+                        if names.is_empty() {
+                            ("No memory archives found.".to_string(), false)
+                        } else {
+                            (names.join("\n"), false)
                         }
-                        Err(e) => (format!("Failed to list memory archives: {}", e), true),
                     }
-                }
+                    Err(e) => (format!("Failed to list memory archives: {}", e), true),
+                },
             }
         }
         other => (format!("Unknown tool: {}", other), true),
@@ -232,7 +228,13 @@ fn sanitize_topic(topic: &str) -> String {
     topic
         .to_lowercase()
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' { c } else { '-' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect::<String>()
         .trim_matches('-')
         .to_string()
